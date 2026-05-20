@@ -1,11 +1,35 @@
 """
-helpers/ai.py — Llama a Groq (LLaMA 3) para analizar las progresiones.
+helpers/ai.py — Integración con Groq para análisis de progresiones de entrenamiento.
+
+Responsabilidades:
+  - Transformar los datos de períodos en un prompt ejercicio-céntrico.
+  - Llamar al modelo LLaMA 3 via Groq API con ese prompt.
+  - Retornar el análisis como string listo para guardar.
+
+Diseño del prompt:
+  En lugar de analizar período por período, el prompt agrupa los datos
+  por ejercicio y muestra la evolución cronológica de cada uno. Esto le
+  permite a la IA detectar tendencias a largo plazo en vez de comparar
+  snapshots aislados.
+
+  Ejemplo de lo que ve la IA:
+    **Empuje de pecho con barra en banco plano**
+      15/07/25-17/08/25: Sem1: S1:12r/60kg S2:10r/60kg | Sem2: S1:12r/65kg
+      18/08/25-12/09/25: Sem1: S1:12r/65kg S2:10r/70kg | ...
+      ...
+
+  Solo se incluyen celdas con datos cargados (reps o peso no vacíos),
+  lo que reduce drásticamente el tamaño del prompt comparado con enviar
+  toda la grilla cruda.
 """
 
 from groq import Groq
 
+# Modelo de Groq a usar. llama-3.3-70b-versatile ofrece el mejor balance
+# entre calidad de análisis y velocidad en el free tier.
 MODEL = "llama-3.3-70b-versatile"
 
+# Instrucción de sistema que define el rol y comportamiento del modelo.
 SYSTEM_PROMPT = """Sos un coach de fitness profesional y analista de datos.
 Vas a recibir datos estructurados de entrenamiento en el gimnasio a lo largo de varios períodos.
 Tu trabajo es analizar progresiones, identificar tendencias y dar recomendaciones concretas.
@@ -13,63 +37,26 @@ Respondé en el mismo idioma en que está escrito el mensaje.
 Sé específico, referenciá nombres reales de ejercicios y números del data."""
 
 
-def build_prompt(periods):
-    """Construye el prompt con los datos de los períodos, omitiendo celdas vacías."""
-    lines = [
-        "Analizá las siguientes rutinas de entrenamiento registradas a lo largo del tiempo.",
-        "Los datos están ordenados del período más reciente al más antiguo.",
-        "Incluí en tu análisis:",
-        "- Progresión de pesos y repeticiones por ejercicio",
-        "- Tendencias generales (mejoras, estancamientos, retrocesos)",
-        "- Ejercicios con mayor progreso",
-        "- Recomendaciones concretas para los próximos ciclos",
-        "",
-    ]
-
-    for period_data in periods:
-        period = period_data["period"]
-        period_lines = [f"## Período: {period}"]
-        has_data = False
-
-        for day_data in period_data["days"]:
-            day_lines = [f"\n### Día {day_data['day']}"]
-
-            for ex in day_data["exercises"]:
-                ex_lines = []
-                for w in ex["weeks"]:
-                    series_parts = []
-                    for idx, s in enumerate(w["series"]):
-                        if s["reps"] or s["peso"]:
-                            reps = s["reps"] or "-"
-                            peso = s["peso"] or "-"
-                            series_parts.append(f"S{idx+1}: {reps}r/{peso}kg")
-                    if series_parts:
-                        ex_lines.append(f"  Sem{w['week']}: {' | '.join(series_parts)}")
-
-                if ex_lines:
-                    has_data = True
-                    day_lines.append(f"\n**{ex['name']}**")
-                    day_lines.extend(ex_lines)
-
-            if len(day_lines) > 1:
-                period_lines.extend(day_lines)
-
-        if has_data:
-            lines.extend(period_lines)
-            lines.append("")
-
-    return "\n".join(lines)
-
-
 def _create_client(api_key):
+    """Crea y retorna el cliente autenticado de Groq."""
     return Groq(api_key=api_key)
 
 
-def _call_groq(client, prompt, system=SYSTEM_PROMPT):
+def _call_groq(client, prompt):
+    """
+    Hace una llamada al modelo de Groq y retorna el texto de la respuesta.
+
+    Args:
+        client: Instancia de Groq autenticada.
+        prompt: Texto del mensaje a enviar al modelo.
+
+    Returns:
+        String con la respuesta generada por el modelo.
+    """
     response = client.chat.completions.create(
         model=MODEL,
         messages=[
-            {"role": "system", "content": system},
+            {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": prompt},
         ],
         max_tokens=4096,
@@ -77,57 +64,112 @@ def _call_groq(client, prompt, system=SYSTEM_PROMPT):
     return response.choices[0].message.content
 
 
-def analyze(periods, api_key, batch_size=1, mock=False):
+def build_prompt(periods):
     """
-    Procesa los períodos uno por uno y genera un análisis final consolidado.
-    Con mock=True omite los llamados a Groq y devuelve texto de prueba.
+    Construye el prompt para la IA a partir de los datos de todos los períodos.
+
+    En vez de estructurar el prompt por período (cronograma), lo estructura
+    por ejercicio (progresión). Cada ejercicio aparece una sola vez con todas
+    sus entradas históricas ordenadas de más antiguo a más reciente.
+
+    Solo se incluyen semanas/series que tengan al menos un dato cargado
+    (reps o peso), para no desperdiciar tokens en celdas vacías.
+
+    Args:
+        periods: Lista de dicts con formato:
+            [{"period": "18/05/26-14/06/26", "days": [...]}, ...]
+            (orden: más reciente primero, como viene del spreadsheet)
+
+    Returns:
+        String listo para enviar como mensaje a la IA.
+    """
+    # La IA necesita ver la progresión de más antiguo a más reciente
+    # para detectar tendencias correctamente. Los períodos llegan en orden
+    # inverso (más reciente primero), por eso se invierte acá.
+    ordered = list(reversed(periods))
+
+    # Construir un dict { nombre_ejercicio: [ {period, data}, ... ] }
+    # agrupando todas las apariciones de cada ejercicio a través del tiempo.
+    exercise_history = {}
+    for period_data in ordered:
+        period = period_data["period"]
+        for day_data in period_data["days"]:
+            for ex in day_data["exercises"]:
+                name = ex["name"]
+
+                # Construir string compacto con solo los datos cargados.
+                # Formato: "Sem1: S1:12r/60kg S2:10r/60kg | Sem2: S1:12r/65kg"
+                weeks_with_data = []
+                for w in ex["weeks"]:
+                    series_parts = []
+                    for idx, s in enumerate(w["series"]):
+                        if s["reps"] or s["peso"]:
+                            reps = s["reps"] or "-"
+                            peso = s["peso"] or "-"
+                            series_parts.append(f"S{idx+1}:{reps}r/{peso}kg")
+                    if series_parts:
+                        weeks_with_data.append(f"Sem{w['week']}: {' '.join(series_parts)}")
+
+                if weeks_with_data:
+                    if name not in exercise_history:
+                        exercise_history[name] = []
+                    exercise_history[name].append({
+                        "period": period,
+                        "data": " | ".join(weeks_with_data),
+                    })
+
+    # Armar el texto del prompt con instrucciones + datos por ejercicio
+    lines = [
+        "Analizá la progresión completa de los siguientes ejercicios a lo largo del tiempo.",
+        "Los datos están ordenados cronológicamente (más antiguo → más reciente).",
+        "Generá un análisis global (no período a período) que incluya:",
+        "- Tendencia general de cada ejercicio (mejora, estancamiento, retroceso)",
+        "- Ejercicios con mayor y menor progreso",
+        "- Observaciones sobre volumen y consistencia",
+        "- Recomendaciones concretas para los próximos ciclos",
+        "",
+    ]
+
+    for name, history in exercise_history.items():
+        lines.append(f"**{name}**")
+        for entry in history:
+            lines.append(f"  {entry['period']}: {entry['data']}")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def analyze(periods, api_key, mock=False, **kwargs):
+    """
+    Genera un análisis global de la progresión de todos los ejercicios.
+
+    Construye un prompt ejercicio-céntrico con todos los datos históricos
+    y hace una sola llamada a Groq para obtener el análisis completo.
+
+    Args:
+        periods:  Lista de períodos con sus datos de ejercicios.
+                  Formato: [{"period": str, "days": [...]}, ...]
+        api_key:  API key de Groq (obtenida en console.groq.com).
+        mock:     Si True, saltea la llamada a la API y retorna un texto
+                  de prueba. Útil para testear el flujo sin gastar tokens.
+        **kwargs: Ignorado (para compatibilidad futura).
+
+    Returns:
+        String con el análisis en Markdown.
     """
     if mock:
-        lines = ["# Análisis de rutinas (MOCK)\n"]
-        for p in periods:
-            lines.append(f"## {p['period']}\n")
-            for day in p["days"]:
-                lines.append(f"### Día {day['day']}: {len(day['exercises'])} ejercicios parseados.")
-            lines.append("")
-        return "\n".join(lines)
-    client = _create_client(api_key)
-    batch_analyses = []
-
-    for i in range(0, len(periods), batch_size):
-        batch = periods[i:i + batch_size]
-        labels = " / ".join(p["period"] for p in batch)
-        print(f"  Analyzing: {labels}...", flush=True)
-        prompt = build_prompt(batch)
-        if not prompt.strip().endswith("---") and len(prompt) < 200:
-            print(f"    (no data, skipping)")
-            continue
-        result = _call_groq(client, prompt)
-        batch_analyses.append(f"### {labels}\n\n{result}")
-
-    if not batch_analyses:
-        return "No hay datos cargados para analizar."
-
-    if len(batch_analyses) == 1:
-        return batch_analyses[0]
-
-    # Síntesis final en chunks de 4 para no exceder el límite
-    print("  Generating final synthesis...", flush=True)
-    chunk_size = 4
-    summaries = []
-    for i in range(0, len(batch_analyses), chunk_size):
-        chunk = batch_analyses[i:i + chunk_size]
-        synthesis_prompt = (
-            "Resumí en pocas líneas las tendencias clave de estos períodos de entrenamiento "
-            "(pesos, progresiones, ejercicios destacados):\n\n"
-            + "\n\n---\n\n".join(chunk)
+        exercise_count = sum(
+            len(day["exercises"])
+            for p in periods for day in p["days"]
         )
-        summaries.append(_call_groq(client, synthesis_prompt))
+        return (
+            f"# Análisis de rutinas (MOCK)\n\n"
+            f"Se analizarían {len(periods)} períodos con un total de "
+            f"{exercise_count} registros de ejercicios.\n"
+        )
 
-    final_prompt = (
-        "Con base en estos resúmenes de entrenamiento, generá un análisis final completo con:\n"
-        "- Tendencias a largo plazo\n"
-        "- Ejercicios con mayor y menor progreso\n"
-        "- Recomendaciones concretas para los próximos ciclos\n\n"
-        + "\n\n---\n\n".join(summaries)
-    )
-    return _call_groq(client, final_prompt)
+    client = _create_client(api_key)
+    prompt = build_prompt(periods)
+    print("  Sending full progression data to Groq...", flush=True)
+    return _call_groq(client, prompt)
+

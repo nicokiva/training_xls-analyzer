@@ -1,16 +1,22 @@
 #!/usr/bin/env python3
 """
-analyze.py — Analiza las progresiones de rutinas de entrenamiento usando IA.
+analyze.py — Entry point del analizador de rutinas de entrenamiento.
 
-Lee todos los tabs del Google Sheets (más reciente primero), genera un análisis
-completo con Claude y lo guarda en un archivo Markdown.
+Flujo completo:
+  1. Se conecta a Google Sheets usando una service account de Google.
+  2. Lee todos los tabs del spreadsheet (cada tab = un período de entrenamiento).
+  3. Parsea los datos: ejercicios, repeticiones y pesos por semana/serie.
+  4. Arma un prompt ejercicio-céntrico y lo manda a Groq (LLaMA 3).
+  5. Guarda el análisis generado en un archivo Markdown.
 
 Uso:
     python3 analyze.py \\
         --sheets-id SPREADSHEET_ID \\
-        --credentials /path/to/credentials.json \\
-        --api-key ANTHROPIC_API_KEY \\
-        [--output analysis.md]
+        --credentials /path/to/service_account.json \\
+        --api-key gsk_... \\
+        [--output analysis.md] \\
+        [--max-periods N] \\
+        [--mock]
 """
 
 import argparse
