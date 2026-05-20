@@ -67,6 +67,9 @@ def has_changed(data, mode):
     return True
 
 
+ANALYSES_DIR = Path("analyses")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="AI-powered gym training analysis."
@@ -93,7 +96,8 @@ def main():
         sys.exit(1)
 
     today = datetime.now().strftime("%d/%m/%Y")
-    output_path = args.output or f"analysis_{args.mode}_{datetime.now().strftime('%Y%m%d')}.md"
+    ANALYSES_DIR.mkdir(exist_ok=True)
+    output_path = args.output or str(ANALYSES_DIR / f"analysis_{args.mode}_{datetime.now().strftime('%Y%m%d')}.md")
 
     print(f"Mode: {args.mode} | Goal: {args.goal}")
     print("Connecting to Google Sheets...")
