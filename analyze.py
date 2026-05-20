@@ -26,6 +26,7 @@ from pathlib import Path
 
 from helpers.reader import get_service, load_all_periods
 from helpers.ai import analyze
+from helpers.mailer import send_analysis
 
 
 def main():
@@ -51,6 +52,9 @@ def main():
         default=None,
         help="Limit analysis to the N most recent periods (default: all)",
     )
+    parser.add_argument("--email-to",       default=None, help="Send analysis to this email address")
+    parser.add_argument("--email-from",     default=None, help="Gmail address to send from")
+    parser.add_argument("--email-password", default=None, help="Gmail App Password (16 chars, not your real password)")
     args = parser.parse_args()
 
     output_path = args.output or f"analysis_{datetime.now().strftime('%Y%m%d')}.md"
@@ -75,6 +79,15 @@ def main():
 
     Path(output_path).write_text(analysis, encoding="utf-8")
     print(f"Analysis saved to: {output_path}")
+
+    if args.email_to:
+        if not args.email_from or not args.email_password:
+            print("Error: --email-from and --email-password are required to send email.")
+            sys.exit(1)
+        print(f"Sending email to {args.email_to}...")
+        subject = f"Training Analysis — {datetime.now().strftime('%d/%m/%Y')}"
+        send_analysis(args.email_from, args.email_password, args.email_to, subject, analysis)
+        print("Email sent.")
 
 
 if __name__ == "__main__":
