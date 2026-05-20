@@ -18,7 +18,7 @@ For Gmail, create an App Password at [myaccount.google.com](https://myaccount.go
 ```bash
 python3 analyze.py \
   --sheets-id 1z4N0o6C1zBx7U_Y-G0h6dkqstgyz5dDCQp7MsAVf2WE \
-  --credentials ../../rutinas-entrenamiento-496600-cfbbb2bb0b5c.json \
+  --credentials ../rutinas-entrenamiento-496600-cfbbb2bb0b5c.json \
   --api-key gsk_... \
   --output analysis.md
 ```
@@ -27,7 +27,7 @@ python3 analyze.py \
 ```bash
 python3 analyze.py \
   --sheets-id 1z4N0o6C1zBx7U_Y-G0h6dkqstgyz5dDCQp7MsAVf2WE \
-  --credentials ../../rutinas-entrenamiento-496600-cfbbb2bb0b5c.json \
+  --credentials ../rutinas-entrenamiento-496600-cfbbb2bb0b5c.json \
   --api-key gsk_... \
   --email-to vos@gmail.com \
   --email-from vos@gmail.com \
@@ -39,7 +39,7 @@ python3 analyze.py \
 ```bash
 python3 analyze.py \
   --sheets-id 1z4N0o6C1zBx7U_Y-G0h6dkqstgyz5dDCQp7MsAVf2WE \
-  --credentials ../../rutinas-entrenamiento-496600-cfbbb2bb0b5c.json \
+  --credentials ../rutinas-entrenamiento-496600-cfbbb2bb0b5c.json \
   --api-key dummy \
   --mock
 ```
