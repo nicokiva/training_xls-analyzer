@@ -1,13 +1,28 @@
 """
 helpers/mailer.py — Sending the analysis by email via Gmail SMTP.
 
-Uses the smtplib standard library (no extra dependencies).
+SMTP (Simple Mail Transfer Protocol) is the standard protocol computers use to
+send email. Python's smtplib handles the low-level connection for us — we just
+call connect, authenticate, and send.
 
-To make it work you need a Google App Password:
+TLS (Transport Layer Security) encrypts the connection so credentials and the
+email body can't be read by anyone intercepting the traffic. Gmail requires it:
+port 587 accepts plain connections but the server immediately upgrades them to
+TLS via the STARTTLS command (server.starttls() below).
+
+Why an App Password instead of your real Gmail password?
+  Google blocks "less secure" logins (plain username + password) when two-step
+  verification is on. An App Password is a one-off 16-character code that Google
+  generates for a specific app — it grants access only to Gmail sending, not to
+  your whole account. If it's ever compromised you can revoke just that key.
+
+To get one:
   1. Enable two-step verification on your Gmail account.
   2. Go to myaccount.google.com → Security → App passwords.
   3. Create one for "Mail" → copy the 16-character password.
   4. Use that password in --email-password (NOT your real Gmail password).
+
+Uses the smtplib standard library (no extra dependencies).
 """
 
 import smtplib

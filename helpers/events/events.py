@@ -1,6 +1,11 @@
 """
 Event consumer for routine-analyzer.
 
+SQLite is a file-based relational database — no server process, no installation.
+The entire database lives in a single .db file on disk. It is ideal here because
+both projects run on the same machine and only need a lightweight way to share
+data without any network or daemon overhead.
+
 The two projects (pdf2xls-generator and routine-analyzer) are decoupled via a
 shared SQLite database that acts as a pub/sub event queue:
 
