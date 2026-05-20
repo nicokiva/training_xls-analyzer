@@ -41,6 +41,7 @@ def main():
     )
     parser.add_argument(
         "--max-periods",
+        type=int,
         default=None,
         help="Limit analysis to the N most recent periods (default: all)",
     )
