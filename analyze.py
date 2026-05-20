@@ -36,6 +36,8 @@ from dotenv import load_dotenv  # third-party: reads .env file into environment 
 from helpers.reader import get_service, load_all_periods, get_latest_week_indices, extract_week_data
 from helpers.ai import analyze, translate_to_spanish
 from helpers.mailer import send_analysis
+from helpers.events import consume_pending_events, mark_event_processed
+from training_shared.events import EventType
 
 # load_dotenv() must be called before os.getenv() so the .env values are available.
 # CLI arguments parsed below will override these if provided.
@@ -92,6 +94,98 @@ def has_changed(data, mode):
 ANALYSES_DIR = Path("analyses")
 
 
+# Map EventType values to their --mode string equivalents.
+# str(EventType.RUN_GLOBAL) == "run:global", which matches the --mode choices.
+EVENT_TO_MODE = {
+    EventType.RUN_GLOBAL:      "global",
+    EventType.RUN_MONTHLY:     "monthly",
+    EventType.RUN_NEW_ROUTINE: "new-routine",
+    EventType.RUN_WEEKLY:      "weekly",
+}
+
+
+def run_analysis(mode, args, service, periods):
+    """
+    Runs one analysis mode end-to-end: build prompt → call AI → translate → save → email.
+
+    Extracted from main() so it can be called both from the CLI path (single mode)
+    and from the event-consumer path (one call per pending event).
+
+    Args:
+        mode:    One of "global", "monthly", "new-routine", "weekly".
+        args:    The parsed argparse Namespace (carries api_key, goal, mock, email flags, etc.)
+        service: Authenticated Google Sheets service object (already connected).
+        periods: List of period dicts loaded from Google Sheets.
+
+    Returns:
+        True if the analysis was run and emailed, False if skipped (no changes).
+    """
+    today = datetime.now().strftime("%d/%m/%Y")
+
+    # Weekly mode needs extra data extracted from the current period.
+    current_week_data = None
+    prev_week_data    = None
+    current_week_num  = None
+
+    if mode == "weekly":
+        current_period = periods[0]
+        current_idx, prev_idx = get_latest_week_indices(current_period)
+
+        if current_idx is None:
+            print("No data found in the current period for weekly analysis.")
+            return False
+
+        current_week_num  = current_idx + 1
+        current_week_data = extract_week_data(current_period, current_idx)
+        prev_week_data    = extract_week_data(current_period, prev_idx) if prev_idx is not None else None
+        change_data       = current_week_data
+    elif mode == "new-routine":
+        change_data = periods[0]["days"]
+    elif mode == "monthly":
+        change_data = periods[0]
+    else:
+        change_data = periods
+
+    # Skip if data hasn't changed since last run (only for real runs, not mock).
+    if not args.mock and not has_changed(change_data, mode):
+        print(f"[{mode}] No changes since last run. Skipping.")
+        return False
+
+    print(f"[{mode}] Analyzing with Groq...")
+    analysis = analyze(
+        periods,
+        args.api_key,
+        mock=args.mock,
+        mode=mode,
+        goal=args.goal,
+        current_week_data=current_week_data,
+        prev_week_data=prev_week_data,
+        current_week_num=current_week_num,
+    )
+
+    if not args.mock:
+        print(f"[{mode}] Translating to Spanish...")
+        analysis = translate_to_spanish(analysis, args.api_key)
+
+    ANALYSES_DIR.mkdir(exist_ok=True)
+    for old_file in ANALYSES_DIR.glob(f"analysis_{mode}_*.md"):
+        old_file.unlink()
+
+    output_path = ANALYSES_DIR / f"analysis_{mode}_{datetime.now().strftime('%Y%m%d')}.md"
+    output_path.write_text(analysis, encoding="utf-8")
+    print(f"[{mode}] Analysis saved to: {output_path}")
+
+    if not args.email_from or not args.email_password:
+        print("Error: EMAIL_FROM and EMAIL_PASSWORD are required (set them in .env).")
+        sys.exit(1)
+
+    subject = EMAIL_SUBJECTS.get(mode, EMAIL_SUBJECTS["global"])(today)
+    print(f"[{mode}] Sending email to {args.email_to}...")
+    send_analysis(args.email_from, args.email_password, args.email_to, subject, analysis)
+    print(f"[{mode}] Done.")
+    return True
+
+
 def main():
     # argparse lets users pass options like: python3 analyze.py --mode weekly --mock
     # Each add_argument() call defines one option. default= sets the value when not provided.
@@ -100,8 +194,8 @@ def main():
     )
     parser.add_argument("--mode",
         choices=["global", "new-routine", "monthly", "weekly"],
-        default="global",
-        help="Analysis mode (default: global)")
+        default=None,
+        help="Analysis mode. If omitted, pending events from events.db are consumed instead.")
     parser.add_argument("--sheets-id",      default=os.getenv("SHEETS_ID"))
     parser.add_argument("--credentials",    default=os.getenv("CREDENTIALS"))
     parser.add_argument("--api-key",        default=os.getenv("GROQ_API_KEY"))
@@ -120,12 +214,8 @@ def main():
 
     if not args.sheets_id or not args.credentials or not args.api_key:
         print("Error: --sheets-id, --credentials and --api-key are required (or set them in .env).")
-        # sys.exit(1) exits with error code 1 — convention: 0 = success, anything else = error
         sys.exit(1)
 
-    today = datetime.now().strftime("%d/%m/%Y")
-
-    print(f"Mode: {args.mode} | Goal: {args.goal}")
     print("Connecting to Google Sheets...")
     service = get_service(args.credentials)
 
@@ -136,88 +226,36 @@ def main():
         print("No data found in the spreadsheet.")
         sys.exit(1)
 
-    # List slicing: periods[:N] returns the first N elements.
-    # If max_periods is None, this block is skipped and we use all periods.
     if args.max_periods:
         periods = periods[:args.max_periods]
 
-    # Generator expression inside join(): iterates periods and extracts "period" key
-    # without building an intermediate list — more memory-efficient than a list comprehension
     print(f"Found {len(periods)} period(s): {', '.join(p['period'] for p in periods)}")
 
-    # --- Prepare data according to the mode and detect changes ---
+    # --- Event consumer mode (no --mode flag passed) ---
+    # Reads all pending events from events.db and runs each one in order.
+    # This is how pdf2xls-generator triggers analyses without calling us directly.
+    if args.mode is None:
+        events = consume_pending_events()
+        if not events:
+            print("No pending events. Nothing to do.")
+            return
+        print(f"Found {len(events)} pending event(s).")
+        for event in events:
+            event_type = event["event_type"]
+            mode = EVENT_TO_MODE.get(event_type)
+            if mode is None:
+                print(f"Unknown event type: {event_type!r} — skipping.")
+                mark_event_processed(event["id"])
+                continue
+            print(f"\nProcessing event: {event_type}")
+            run_analysis(mode, args, service, periods)
+            # Mark as processed regardless of result so we don't retry indefinitely.
+            mark_event_processed(event["id"])
+        return
 
-    # These are initialized to None. Only weekly mode will fill them in.
-    current_week_data = None
-    prev_week_data    = None
-    current_week_num  = None
-
-    if args.mode == "weekly":
-        current_period = periods[0]
-        current_idx, prev_idx = get_latest_week_indices(current_period)
-
-        if current_idx is None:
-            print("No data found in the current period for weekly analysis.")
-            sys.exit(1)
-
-        # +1 to convert from 0-based index to human-readable week number (Week 1, 2, 3, 4)
-        current_week_num  = current_idx + 1
-        current_week_data = extract_week_data(current_period, current_idx)
-        # Ternary expression: value_if_true if condition else value_if_false
-        prev_week_data    = extract_week_data(current_period, prev_idx) if prev_idx is not None else None
-
-        change_data = current_week_data
-    elif args.mode == "new-routine":
-        change_data = periods[0]["days"]  # only the new routine
-    elif args.mode == "monthly":
-        change_data = periods[0]
-    else:
-        change_data = periods
-
-    if not args.mock and not has_changed(change_data, args.mode):
-        print("No changes since last run. Nothing to do.")
-        sys.exit(0)
-
-    print("Analyzing with Groq...")
-    analysis = analyze(
-        periods,
-        args.api_key,
-        mock=args.mock,
-        mode=args.mode,
-        goal=args.goal,
-        current_week_data=current_week_data,
-        prev_week_data=prev_week_data,
-        current_week_num=current_week_num,
-    )
-
-    # Translate only real analyses — mock output is already readable for testing
-    if not args.mock:
-        print("Translating to Spanish...")
-        analysis = translate_to_spanish(analysis, args.api_key)
-
-    # mkdir(exist_ok=True) creates the directory if it doesn't exist.
-    # Without exist_ok=True it would raise an error if the dir already exists.
-    ANALYSES_DIR.mkdir(exist_ok=True)
-
-    # glob() finds files matching a pattern. The * is a wildcard matching any characters.
-    # We delete the previous file for this mode so we never accumulate stale analyses.
-    for old_file in ANALYSES_DIR.glob(f"analysis_{args.mode}_*.md"):
-        old_file.unlink()  # unlink() deletes a file (same as os.remove())
-
-    output_path = ANALYSES_DIR / f"analysis_{args.mode}_{datetime.now().strftime('%Y%m%d')}.md"
-    # write_text() writes a string to a file, creating it if it doesn't exist.
-    # encoding="utf-8" is important for Spanish characters (ó, é, ñ, etc.)
-    output_path.write_text(analysis, encoding="utf-8")
-    print(f"Analysis saved to: {output_path}")
-
-    if not args.email_from or not args.email_password:
-        print("Error: EMAIL_FROM and EMAIL_PASSWORD are required (set them in .env).")
-        sys.exit(1)
-    # .get() on a dict returns None if the key doesn't exist, avoiding a KeyError
-    subject = EMAIL_SUBJECTS.get(args.mode, EMAIL_SUBJECTS["global"])(today)
-    print(f"Sending email to {args.email_to}...")
-    send_analysis(args.email_from, args.email_password, args.email_to, subject, analysis)
-    print("Done.")
+    # --- Single-mode CLI path (--mode was passed explicitly) ---
+    print(f"Mode: {args.mode} | Goal: {args.goal}")
+    run_analysis(args.mode, args, service, periods)
 
 
 # This block only runs when the script is executed directly with python3.
