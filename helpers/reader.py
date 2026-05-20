@@ -191,6 +191,64 @@ def parse_tab(rows):
     return days
 
 
+def get_latest_week_indices(period):
+    """
+    Detecta qué semanas tienen datos cargados en el período y retorna los
+    índices (0-based) de la semana actual y la anterior.
+
+    Útil para el modo weekly: la "semana actual" es la última con algún dato,
+    y la "semana anterior" es la inmediatamente previa.
+
+    Args:
+        period: Dict con formato {"period": str, "days": [...]}.
+
+    Returns:
+        Tupla (current_idx, prev_idx) con índices 0-based.
+        prev_idx es None si la semana actual es la primera.
+        Ambos son None si no hay datos en el período.
+    """
+    weeks_with_data = set()
+    for day in period["days"]:
+        for ex in day["exercises"]:
+            for w in ex["weeks"]:
+                if any(s["reps"] or s["peso"] for s in w["series"]):
+                    weeks_with_data.add(w["week"] - 1)  # convertir a 0-based
+
+    if not weeks_with_data:
+        return (None, None)
+
+    current = max(weeks_with_data)
+    prev = current - 1 if current > 0 else None
+    return (current, prev)
+
+
+def extract_week_data(period, week_idx):
+    """
+    Extrae los datos de una semana específica de un período.
+
+    Args:
+        period:   Dict con formato {"period": str, "days": [...]}.
+        week_idx: Índice 0-based de la semana a extraer.
+
+    Returns:
+        Lista de días con solo los datos de esa semana:
+        [{"day": N, "exercises": [{"name": str, "series": [...]}]}, ...]
+        Solo incluye ejercicios que tengan al menos un dato en esa semana.
+    """
+    result = []
+    for day in period["days"]:
+        exercises = []
+        for ex in day["exercises"]:
+            if week_idx >= len(ex["weeks"]):
+                continue
+            week = ex["weeks"][week_idx]
+            if any(s["reps"] or s["peso"] for s in week["series"]):
+                exercises.append({"name": ex["name"], "series": week["series"]})
+        if exercises:
+            result.append({"day": day["day"], "exercises": exercises})
+    return result
+
+
 def load_all_periods(service, spreadsheet_id):
     """
     Carga y parsea todos los tabs del spreadsheet.

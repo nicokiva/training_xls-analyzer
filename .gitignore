@@ -4,4 +4,4 @@
 __pycache__/
 *.pyc
 .env
-.last_data_hash
+.last_data_hash*
