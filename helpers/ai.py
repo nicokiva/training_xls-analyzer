@@ -174,15 +174,29 @@ def analyze(periods, api_key, mock=False, **kwargs):
         String con el análisis en Markdown.
     """
     if mock:
-        exercise_count = sum(
-            len(day["exercises"])
-            for p in periods for day in p["days"]
-        )
-        return (
-            f"# Análisis de rutinas (MOCK)\n\n"
-            f"Se analizarían {len(periods)} períodos con un total de "
-            f"{exercise_count} registros de ejercicios.\n"
-        )
+        lines = [
+            "# Análisis de rutinas (MOCK)",
+            "",
+            "> ⚠️ Este es un análisis de prueba. Los datos son reales pero el análisis es inventado.",
+            "",
+            f"Se analizaron **{len(periods)} períodos** con un total de **{sum(len(day['exercises']) for p in periods for day in p['days'])} registros** de ejercicios.",
+            "",
+            "## Tendencias generales",
+            "",
+            "- **Press plano con barra**: progresión sostenida, de ~60kg a ~75kg a lo largo del año. ✅",
+            "- **Sentadilla clásica**: estancamiento en semanas 2-3, sin variación de peso en los últimos 2 períodos. ⚠️",
+            "- **Dominada estricta**: retroceso leve, bajó de 8 reps a 6 en el último período. ❌",
+            "",
+            "## Recomendaciones",
+            "",
+            "1. Aumentar la carga en sentadilla — llevas 2 períodos sin cambios.",
+            "2. Revisar técnica en dominadas antes de subir el volumen.",
+            "3. Mantener la progresión en press plano, está funcionando bien.",
+            "",
+            "---",
+            "*Corré sin `--mock` para obtener el análisis real generado por IA.*",
+        ]
+        return "\n".join(lines)
 
     client = _create_client(api_key)
     prompt = build_prompt(periods)
