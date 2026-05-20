@@ -20,6 +20,8 @@ Uso:
 """
 
 import argparse
+import hashlib
+import json
 import os
 import sys
 from datetime import datetime
@@ -33,6 +35,26 @@ from helpers.mailer import send_analysis
 
 # Cargar variables del .env antes de leer args (los CLI args tienen prioridad)
 load_dotenv()
+
+HASH_FILE = Path(".last_data_hash")
+
+
+def compute_hash(periods):
+    """Genera un hash MD5 del contenido de los períodos para detectar cambios."""
+    content = json.dumps(periods, sort_keys=True, ensure_ascii=False)
+    return hashlib.md5(content.encode()).hexdigest()
+
+
+def has_changed(periods):
+    """
+    Retorna True si los datos cambiaron desde la última ejecución.
+    Guarda el hash nuevo en HASH_FILE para la próxima comparación.
+    """
+    current_hash = compute_hash(periods)
+    if HASH_FILE.exists() and HASH_FILE.read_text().strip() == current_hash:
+        return False
+    HASH_FILE.write_text(current_hash)
+    return True
 
 
 def main():
@@ -70,6 +92,10 @@ def main():
         periods = periods[:args.max_periods]
 
     print(f"Found {len(periods)} period(s): {', '.join(p['period'] for p in periods)}")
+
+    if not args.mock and not has_changed(periods):
+        print("No changes since last run. Nothing to do.")
+        sys.exit(0)
 
     print("Analyzing with Groq...")
     analysis = analyze(periods, args.api_key, mock=args.mock)
