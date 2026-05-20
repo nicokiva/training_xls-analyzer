@@ -1,15 +1,16 @@
 """
-helpers/ai.py — Llama a Claude (Anthropic) para analizar las progresiones.
+helpers/ai.py — Llama a Gemini (Google) para analizar las progresiones.
 """
 
-import anthropic
+import google.generativeai as genai
 
-MODEL = "claude-opus-4-5"
+MODEL = "gemini-1.5-flash"
 
-SYSTEM_PROMPT = """You are a professional fitness coach and data analyst.
-You will receive structured gym training data across multiple periods and your job is to analyze progressions, identify trends, and provide actionable recommendations.
-Respond in the same language the user writes in.
-Be specific, reference actual exercise names and numbers from the data."""
+SYSTEM_PROMPT = """Sos un coach de fitness profesional y analista de datos.
+Vas a recibir datos estructurados de entrenamiento en el gimnasio a lo largo de varios períodos.
+Tu trabajo es analizar progresiones, identificar tendencias y dar recomendaciones concretas.
+Respondé en el mismo idioma en que está escrito el mensaje.
+Sé específico, referenciá nombres reales de ejercicios y números del data."""
 
 
 def build_prompt(periods):
@@ -46,15 +47,9 @@ def build_prompt(periods):
 
 
 def analyze(periods, api_key):
-    """Llama a Claude con los datos y retorna el análisis como string."""
-    client = anthropic.Anthropic(api_key=api_key)
+    """Llama a Gemini con los datos y retorna el análisis como string."""
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel(MODEL, system_instruction=SYSTEM_PROMPT)
     prompt = build_prompt(periods)
-
-    message = client.messages.create(
-        model=MODEL,
-        max_tokens=4096,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": prompt}],
-    )
-
-    return message.content[0].text
+    response = model.generate_content(prompt)
+    return response.text
