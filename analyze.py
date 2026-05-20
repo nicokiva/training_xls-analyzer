@@ -83,7 +83,6 @@ def main():
     parser.add_argument("--api-key",        default=os.getenv("GROQ_API_KEY"))
     parser.add_argument("--goal",           default=os.getenv("GOAL", "hipertrofia"),
         help="Training objective injected into all prompts (default: hipertrofia)")
-    parser.add_argument("--output",         default=None)
     parser.add_argument("--mock",           action="store_true")
     parser.add_argument("--max-periods",    type=int, default=None)
     parser.add_argument("--email-to",       default=os.getenv("EMAIL_TO"))
@@ -96,8 +95,6 @@ def main():
         sys.exit(1)
 
     today = datetime.now().strftime("%d/%m/%Y")
-    ANALYSES_DIR.mkdir(exist_ok=True)
-    output_path = args.output or str(ANALYSES_DIR / f"analysis_{args.mode}_{datetime.now().strftime('%Y%m%d')}.md")
 
     print(f"Mode: {args.mode} | Goal: {args.goal}")
     print("Connecting to Google Sheets...")
@@ -157,17 +154,23 @@ def main():
         current_week_num=current_week_num,
     )
 
-    Path(output_path).write_text(analysis, encoding="utf-8")
+    ANALYSES_DIR.mkdir(exist_ok=True)
+
+    # Eliminar el análisis anterior de este modo antes de guardar el nuevo
+    for old_file in ANALYSES_DIR.glob(f"analysis_{args.mode}_*.md"):
+        old_file.unlink()
+
+    output_path = ANALYSES_DIR / f"analysis_{args.mode}_{datetime.now().strftime('%Y%m%d')}.md"
+    output_path.write_text(analysis, encoding="utf-8")
     print(f"Analysis saved to: {output_path}")
 
-    if args.email_to:
-        if not args.email_from or not args.email_password:
-            print("Error: --email-from and --email-password are required to send email.")
-            sys.exit(1)
-        subject = EMAIL_SUBJECTS.get(args.mode, EMAIL_SUBJECTS["global"])(today)
-        print(f"Sending email to {args.email_to}...")
-        send_analysis(args.email_from, args.email_password, args.email_to, subject, analysis)
-        print("Email sent.")
+    if not args.email_from or not args.email_password:
+        print("Error: EMAIL_FROM and EMAIL_PASSWORD are required (set them in .env).")
+        sys.exit(1)
+    subject = EMAIL_SUBJECTS.get(args.mode, EMAIL_SUBJECTS["global"])(today)
+    print(f"Sending email to {args.email_to}...")
+    send_analysis(args.email_from, args.email_password, args.email_to, subject, analysis)
+    print("Done.")
 
 
 if __name__ == "__main__":
