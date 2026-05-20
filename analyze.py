@@ -34,6 +34,12 @@ def main():
         default=None,
         help="Output .md file (default: analysis_YYYYMMDD.md)",
     )
+    parser.add_argument(
+        "--max-periods",
+        type=int,
+        default=None,
+        help="Limit analysis to the N most recent periods (default: all)",
+    )
     args = parser.parse_args()
 
     output_path = args.output or f"analysis_{datetime.now().strftime('%Y%m%d')}.md"
@@ -48,9 +54,12 @@ def main():
         print("No data found in the spreadsheet.")
         sys.exit(1)
 
+    if args.max_periods:
+        periods = periods[:args.max_periods]
+
     print(f"Found {len(periods)} period(s): {', '.join(p['period'] for p in periods)}")
 
-    print("Analyzing with Claude...")
+    print("Analyzing with Groq...")
     analysis = analyze(periods, args.api_key)
 
     Path(output_path).write_text(analysis, encoding="utf-8")

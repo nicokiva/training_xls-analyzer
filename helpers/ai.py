@@ -14,7 +14,7 @@ Sé específico, referenciá nombres reales de ejercicios y números del data.""
 
 
 def build_prompt(periods):
-    """Construye el prompt con todos los datos de los períodos."""
+    """Construye el prompt con los datos de los períodos, omitiendo celdas vacías."""
     lines = [
         "Analizá las siguientes rutinas de entrenamiento registradas a lo largo del tiempo.",
         "Los datos están ordenados del período más reciente al más antiguo.",
@@ -28,34 +28,97 @@ def build_prompt(periods):
 
     for period_data in periods:
         period = period_data["period"]
-        lines.append(f"## Período: {period}")
+        period_lines = [f"## Período: {period}"]
+        has_data = False
+
         for day_data in period_data["days"]:
-            lines.append(f"\n### Día {day_data['day']}")
+            day_lines = [f"\n### Día {day_data['day']}"]
+
             for ex in day_data["exercises"]:
-                lines.append(f"\n**{ex['name']}**")
+                ex_lines = []
                 for w in ex["weeks"]:
-                    week_str = f"  Semana {w['week']}: "
                     series_parts = []
-                    for s in w["series"]:
-                        reps = s["reps"] or "-"
-                        peso = s["peso"] or "-"
-                        series_parts.append(f"S{w['series'].index(s)+1}: {reps} reps / {peso} kg")
-                    lines.append(week_str + " | ".join(series_parts))
-        lines.append("")
+                    for idx, s in enumerate(w["series"]):
+                        if s["reps"] or s["peso"]:
+                            reps = s["reps"] or "-"
+                            peso = s["peso"] or "-"
+                            series_parts.append(f"S{idx+1}: {reps}r/{peso}kg")
+                    if series_parts:
+                        ex_lines.append(f"  Sem{w['week']}: {' | '.join(series_parts)}")
+
+                if ex_lines:
+                    has_data = True
+                    day_lines.append(f"\n**{ex['name']}**")
+                    day_lines.extend(ex_lines)
+
+            if len(day_lines) > 1:
+                period_lines.extend(day_lines)
+
+        if has_data:
+            lines.extend(period_lines)
+            lines.append("")
 
     return "\n".join(lines)
 
 
-def analyze(periods, api_key):
-    """Llama a Groq con los datos y retorna el análisis como string."""
-    client = Groq(api_key=api_key)
-    prompt = build_prompt(periods)
+def _create_client(api_key):
+    return Groq(api_key=api_key)
+
+
+def _call_groq(client, prompt, system=SYSTEM_PROMPT):
     response = client.chat.completions.create(
         model=MODEL,
         messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system},
             {"role": "user", "content": prompt},
         ],
         max_tokens=4096,
     )
     return response.choices[0].message.content
+
+
+def analyze(periods, api_key, batch_size=1):
+    """
+    Procesa los períodos uno por uno y genera un análisis final consolidado.
+    """
+    client = _create_client(api_key)
+    batch_analyses = []
+
+    for i in range(0, len(periods), batch_size):
+        batch = periods[i:i + batch_size]
+        labels = " / ".join(p["period"] for p in batch)
+        print(f"  Analyzing: {labels}...", flush=True)
+        prompt = build_prompt(batch)
+        if not prompt.strip().endswith("---") and len(prompt) < 200:
+            print(f"    (no data, skipping)")
+            continue
+        result = _call_groq(client, prompt)
+        batch_analyses.append(f"### {labels}\n\n{result}")
+
+    if not batch_analyses:
+        return "No hay datos cargados para analizar."
+
+    if len(batch_analyses) == 1:
+        return batch_analyses[0]
+
+    # Síntesis final en chunks de 4 para no exceder el límite
+    print("  Generating final synthesis...", flush=True)
+    chunk_size = 4
+    summaries = []
+    for i in range(0, len(batch_analyses), chunk_size):
+        chunk = batch_analyses[i:i + chunk_size]
+        synthesis_prompt = (
+            "Resumí en pocas líneas las tendencias clave de estos períodos de entrenamiento "
+            "(pesos, progresiones, ejercicios destacados):\n\n"
+            + "\n\n---\n\n".join(chunk)
+        )
+        summaries.append(_call_groq(client, synthesis_prompt))
+
+    final_prompt = (
+        "Con base en estos resúmenes de entrenamiento, generá un análisis final completo con:\n"
+        "- Tendencias a largo plazo\n"
+        "- Ejercicios con mayor y menor progreso\n"
+        "- Recomendaciones concretas para los próximos ciclos\n\n"
+        + "\n\n---\n\n".join(summaries)
+    )
+    return _call_groq(client, final_prompt)
