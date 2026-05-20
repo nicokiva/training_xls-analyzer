@@ -164,16 +164,13 @@ def main():
     output_path.write_text(analysis, encoding="utf-8")
     print(f"Analysis saved to: {output_path}")
 
-    if not args.mock:
-        if not args.email_from or not args.email_password:
-            print("Error: EMAIL_FROM and EMAIL_PASSWORD are required (set them in .env).")
-            sys.exit(1)
-        subject = EMAIL_SUBJECTS.get(args.mode, EMAIL_SUBJECTS["global"])(today)
-        print(f"Sending email to {args.email_to}...")
-        send_analysis(args.email_from, args.email_password, args.email_to, subject, analysis)
-        print("Done.")
-    else:
-        print("Mock mode — email skipped.")
+    if not args.email_from or not args.email_password:
+        print("Error: EMAIL_FROM and EMAIL_PASSWORD are required (set them in .env).")
+        sys.exit(1)
+    subject = EMAIL_SUBJECTS.get(args.mode, EMAIL_SUBJECTS["global"])(today)
+    print(f"Sending email to {args.email_to}...")
+    send_analysis(args.email_from, args.email_password, args.email_to, subject, analysis)
+    print("Done.")
 
 
 if __name__ == "__main__":
