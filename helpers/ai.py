@@ -77,10 +77,19 @@ def _call_groq(client, prompt, system=SYSTEM_PROMPT):
     return response.choices[0].message.content
 
 
-def analyze(periods, api_key, batch_size=1):
+def analyze(periods, api_key, batch_size=1, mock=False):
     """
     Procesa los períodos uno por uno y genera un análisis final consolidado.
+    Con mock=True omite los llamados a Groq y devuelve texto de prueba.
     """
+    if mock:
+        lines = ["# Análisis de rutinas (MOCK)\n"]
+        for p in periods:
+            lines.append(f"## {p['period']}\n")
+            for day in p["days"]:
+                lines.append(f"### Día {day['day']}: {len(day['exercises'])} ejercicios parseados.")
+            lines.append("")
+        return "\n".join(lines)
     client = _create_client(api_key)
     batch_analyses = []
 

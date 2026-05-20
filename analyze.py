@@ -35,8 +35,12 @@ def main():
         help="Output .md file (default: analysis_YYYYMMDD.md)",
     )
     parser.add_argument(
+        "--mock",
+        action="store_true",
+        help="Skip Groq API calls and write a fake analysis (for testing)",
+    )
+    parser.add_argument(
         "--max-periods",
-        type=int,
         default=None,
         help="Limit analysis to the N most recent periods (default: all)",
     )
@@ -60,7 +64,7 @@ def main():
     print(f"Found {len(periods)} period(s): {', '.join(p['period'] for p in periods)}")
 
     print("Analyzing with Groq...")
-    analysis = analyze(periods, args.api_key)
+    analysis = analyze(periods, args.api_key, mock=args.mock)
 
     Path(output_path).write_text(analysis, encoding="utf-8")
     print(f"Analysis saved to: {output_path}")
