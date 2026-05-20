@@ -28,7 +28,7 @@ def main():
     )
     parser.add_argument("--sheets-id", required=True, help="Google Sheets spreadsheet ID")
     parser.add_argument("--credentials", required=True, help="Path to Google service account JSON")
-    parser.add_argument("--api-key", required=True, help="Google Gemini API key (aistudio.google.com)")
+    parser.add_argument("--api-key", required=True, help="Groq API key (console.groq.com)")
     parser.add_argument(
         "--output",
         default=None,

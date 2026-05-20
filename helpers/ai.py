@@ -1,10 +1,10 @@
 """
-helpers/ai.py — Llama a Gemini (Google) para analizar las progresiones.
+helpers/ai.py — Llama a Groq (LLaMA 3) para analizar las progresiones.
 """
 
-import google.generativeai as genai
+from groq import Groq
 
-MODEL = "gemini-1.5-flash"
+MODEL = "llama-3.3-70b-versatile"
 
 SYSTEM_PROMPT = """Sos un coach de fitness profesional y analista de datos.
 Vas a recibir datos estructurados de entrenamiento en el gimnasio a lo largo de varios períodos.
@@ -47,9 +47,15 @@ def build_prompt(periods):
 
 
 def analyze(periods, api_key):
-    """Llama a Gemini con los datos y retorna el análisis como string."""
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel(MODEL, system_instruction=SYSTEM_PROMPT)
+    """Llama a Groq con los datos y retorna el análisis como string."""
+    client = Groq(api_key=api_key)
     prompt = build_prompt(periods)
-    response = model.generate_content(prompt)
-    return response.text
+    response = client.chat.completions.create(
+        model=MODEL,
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+        ],
+        max_tokens=4096,
+    )
+    return response.choices[0].message.content
