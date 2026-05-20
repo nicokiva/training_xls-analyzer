@@ -1,0 +1,16 @@
+Weekly analysis of period {period}.
+User goal: {goal}.
+
+## Previous week
+
+{prev_week}
+
+## Current week
+
+{current_week}
+
+Comparing with the previous week, analyze:
+1. Did overall performance improve this week?
+2. Which exercises improved (more weight or more reps)? Which declined?
+3. Was it a good week for the {goal} goal?
+4. What adjustments do you recommend for next week?

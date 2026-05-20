@@ -1,0 +1,16 @@
+A new training routine has just been generated.
+The user's goal is: {goal}.
+
+## New routine ({period})
+
+{routine}
+
+## Previous training history
+
+{history}
+
+Analyze:
+1. Is this routine suitable for the {goal} goal? Why?
+2. Are there exercises that don't contribute to the goal or could be improved?
+3. What concrete changes would you make to this routine given the user's history?
+4. Are there patterns from the history that this routine leverages well or ignores?

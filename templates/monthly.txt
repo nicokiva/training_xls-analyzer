@@ -1,0 +1,16 @@
+Provide a balance of the training month {period}.
+The user's goal is: {goal}.
+
+## Month data
+
+{current_block}
+
+## Previous history (context)
+
+{history}
+
+Analyze:
+1. Was the {goal} goal met this month? What evidence is there in the numbers?
+2. Which exercises progressed well? Which plateaued or regressed?
+3. How was the consistency and volume compared to previous months?
+4. What adjustments do you recommend for next month?

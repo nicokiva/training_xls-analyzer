@@ -1,0 +1,11 @@
+Analyze the complete progression of the following exercises over time.
+Data is ordered chronologically (oldest → most recent).
+
+Generate a global analysis oriented toward the {goal} goal that includes:
+- General trend for each exercise (improvement, plateau, regression)
+- Exercises with the most and least progress
+- Evaluation of whether the history is on track to meet the {goal} goal
+- Plateau signals with concrete evidence
+- Concrete recommendations for the next cycles
+
+{history}

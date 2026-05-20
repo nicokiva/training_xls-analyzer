@@ -1,0 +1,12 @@
+Weekly analysis of period {period}.
+User goal: {goal}.
+
+## Current week (first of the period)
+
+{current_week}
+
+This is the first week of the period, there is no previous week to compare.
+Analyze:
+1. How did the period start in relation to the {goal} goal?
+2. Is there anything notable in the numbers of this first week?
+3. What do you recommend for next week?

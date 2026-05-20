@@ -16,17 +16,27 @@ Available modes:
   - weekly:       Compares the current week with the previous one in the active period.
                   Was it a good week? Did it improve?
 
-Exercise-centric prompt design (global/monthly modes):
-  Instead of analyzing period by period, groups data by exercise
-  and shows the chronological evolution. This allows detecting long-term
-  trends instead of comparing isolated snapshots.
+Template system:
+  Prompts are loaded from templates/*.txt files so you can edit them without
+  touching Python code. Each template uses {placeholders} for dynamic values.
+  If a template file is missing, a hardcoded default is used as fallback.
 """
 
+from pathlib import Path
 from groq import Groq
 
 MODEL = "llama-3.3-70b-versatile"
 
-_BASE_SYSTEM_PROMPT = """You are a professional fitness coach and training data analyst.
+# Templates are looked up relative to the project root (two levels up from this file).
+# Path(__file__) is the absolute path of this file.
+# .parent.parent.parent navigates: ai/ → helpers/ → routine-analyzer/
+TEMPLATES_DIR = Path(__file__).parent.parent.parent / "templates"
+
+# ---------------------------------------------------------------------------
+# Hardcoded fallback prompts (used when the template file is missing)
+# ---------------------------------------------------------------------------
+
+_DEFAULT_SYSTEM = """You are a professional fitness coach and training data analyst.
 
 How to interpret the data:
 - "Rep." = repetitions PERFORMED by the user in that set (not the expected ones).
@@ -37,16 +47,39 @@ How to interpret the data:
 - Data is ordered: Week 1 → 2 → 3 → 4, with 3 sets per week.
 
 Be concrete and reference real exercise names and numbers from the data.
-Do not use generic phrases — every observation must be backed by specific data."""
+Do not use generic phrases — every observation must be backed by specific data.
+
+User goal: {goal}."""
+
+
+def _load_template(name, **kwargs):
+    """
+    Loads a prompt template from templates/<name>.txt and fills in the placeholders.
+
+    Uses str.format(**kwargs) to replace {placeholders} with actual values.
+    Falls back gracefully if the file doesn't exist.
+
+    Args:
+        name:    Template filename without extension (e.g. "global", "weekly").
+        **kwargs: Placeholder values to inject (e.g. goal="hypertrophy", history="...").
+
+    Returns:
+        The template string with all placeholders filled in.
+        If the file is missing, returns None so callers can use their hardcoded default.
+    """
+    path = TEMPLATES_DIR / f"{name}.txt"
+    if not path.exists():
+        return None
+    # read_text() reads the file as a string. .format(**kwargs) replaces {key} with values.
+    return path.read_text(encoding="utf-8").format(**kwargs)
 
 
 def _make_system_prompt(goal):
-    return f"{_BASE_SYSTEM_PROMPT}\n\nUser goal: **{goal}**."
+    """Loads the system prompt template, falling back to the hardcoded default."""
+    result = _load_template("system", goal=goal)
+    # 'or' here: if result is None or empty string, use the default
+    return result or _DEFAULT_SYSTEM.format(goal=goal)
 
-
-def _create_client(api_key):
-    """Creates and returns the authenticated Groq client."""
-    return Groq(api_key=api_key)
 
 
 def _call_groq(client, system_prompt, user_prompt, max_tokens=4096):
@@ -152,15 +185,12 @@ def _format_week_data(week_data, week_label):
 def build_global_prompt(periods, goal):
     """
     Prompt for global mode: full analysis of the entire history.
-
-    Args:
-        periods: All available periods (most recent first).
-        goal:    User goal (e.g. "hypertrophy").
-
-    Returns:
-        String of the prompt ready to send to the AI.
+    Loads from templates/global.txt if available, otherwise uses hardcoded default.
     """
     history_block = _format_exercise_history(periods)
+    result = _load_template("global", goal=goal, history=history_block)
+    if result:
+        return result
     return (
         f"Analyze the complete progression of the following exercises over time.\n"
         f"Data is ordered chronologically (oldest → most recent).\n\n"
@@ -177,23 +207,17 @@ def build_global_prompt(periods, goal):
 def build_new_routine_prompt(periods, goal):
     """
     Prompt for new-routine mode: evaluates the newly generated routine.
-
-    The first period is the new routine (no execution data yet).
-    The rest are the history of executed periods.
-
-    Args:
-        periods: List with at least 1 period. periods[0] = new routine.
-        goal:    User goal.
-
-    Returns:
-        String of the prompt ready to send to the AI.
+    Loads from templates/new-routine.txt if available.
     """
-    new_period = periods[0]
-    history    = periods[1:]
+    new_period    = periods[0]
+    history       = periods[1:]
+    routine_block = _format_routine_structure(new_period)
+    history_block = _format_exercise_history(history) if history else "(no previous history)"
 
-    routine_block  = _format_routine_structure(new_period)
-    history_block  = _format_exercise_history(history) if history else "(no previous history)"
-
+    result = _load_template("new-routine", goal=goal, period=new_period["period"],
+                            routine=routine_block, history=history_block)
+    if result:
+        return result
     return (
         f"A new training routine has just been generated.\n"
         f"The user's goal is: **{goal}**.\n\n"
@@ -212,16 +236,7 @@ def build_new_routine_prompt(periods, goal):
 def build_monthly_prompt(periods, goal):
     """
     Prompt for monthly mode: balance of the most recent month.
-
-    The first period is the month to analyze (with complete execution data).
-    The rest are the previous history for context.
-
-    Args:
-        periods: List of periods. periods[0] = month to analyze.
-        goal:    User goal.
-
-    Returns:
-        String of the prompt ready to send to the AI.
+    Loads from templates/monthly.txt if available.
     """
     current_period = periods[0]
     history        = periods[1:]
@@ -229,6 +244,10 @@ def build_monthly_prompt(periods, goal):
     current_block = _format_exercise_history([current_period])
     history_block = _format_exercise_history(history) if history else "(no previous history)"
 
+    result = _load_template("monthly", goal=goal, period=current_period["period"],
+                            current_block=current_block, history=history_block)
+    if result:
+        return result
     return (
         f"Provide a balance of the training month **{current_period['period']}**.\n"
         f"The user's goal is: **{goal}**.\n\n"
@@ -247,23 +266,20 @@ def build_monthly_prompt(periods, goal):
 def build_weekly_prompt(period, current_week_data, prev_week_data, current_week_num, goal):
     """
     Prompt for weekly mode: compares the current week with the previous one.
-
-    Args:
-        period:            Active period (dict with "period" key).
-        current_week_data: Output of extract_week_data for the current week.
-        prev_week_data:    Output of extract_week_data for the previous week.
-                           Can be None if it's the first week of the period.
-        current_week_num:  Current week number (1-based, for display in the prompt).
-        goal:              User goal.
-
-    Returns:
-        String of the prompt ready to send to the AI.
+    Loads from templates/weekly.txt (with prev week) or templates/weekly_first.txt (no prev).
     """
     current_block = _format_week_data(current_week_data, f"Week {current_week_num} (current)")
 
     if prev_week_data:
         prev_block = _format_week_data(prev_week_data, f"Week {current_week_num - 1} (previous)")
-        comparison = (
+        result = _load_template("weekly", goal=goal, period=period["period"],
+                                current_week=current_block, prev_week=prev_block,
+                                week_num=current_week_num)
+        if result:
+            return result
+        return (
+            f"Weekly analysis of period **{period['period']}**.\n"
+            f"User goal: **{goal}**.\n\n"
             f"## Previous week\n\n{prev_block}\n"
             f"## Current week\n\n{current_block}\n"
             f"Comparing with the previous week, analyze:\n"
@@ -273,7 +289,13 @@ def build_weekly_prompt(period, current_week_data, prev_week_data, current_week_
             f"4. What adjustments do you recommend for next week?\n"
         )
     else:
-        comparison = (
+        result = _load_template("weekly_first", goal=goal, period=period["period"],
+                                current_week=current_block, week_num=current_week_num)
+        if result:
+            return result
+        return (
+            f"Weekly analysis of period **{period['period']}**.\n"
+            f"User goal: **{goal}**.\n\n"
             f"## Current week (first of the period)\n\n{current_block}\n"
             f"This is the first week of the period, there is no previous week to compare.\n"
             f"Analyze:\n"
@@ -281,12 +303,6 @@ def build_weekly_prompt(period, current_week_data, prev_week_data, current_week_
             f"2. Is there anything notable in the numbers of this first week?\n"
             f"3. What do you recommend for next week?\n"
         )
-
-    return (
-        f"Weekly analysis of period **{period['period']}**.\n"
-        f"User goal: **{goal}**.\n\n"
-        f"{comparison}"
-    )
 
 
 # ---------------------------------------------------------------------------
