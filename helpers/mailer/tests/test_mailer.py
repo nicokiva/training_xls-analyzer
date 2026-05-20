@@ -9,8 +9,8 @@ from helpers.mailer import send_analysis
 FAKE_FROM  = "from@example.com"
 FAKE_PASS  = "fakepassword123"
 FAKE_TO    = "to@example.com"
-FAKE_SUBJ  = "Análisis semanal"
-FAKE_BODY  = "## Análisis\n\nTodo bien esta semana."
+FAKE_SUBJ  = "Weekly analysis"
+FAKE_BODY  = "## Analysis\n\nGood week overall."
 
 
 @pytest.fixture

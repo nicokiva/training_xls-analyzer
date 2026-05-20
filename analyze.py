@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
 """
-analyze.py — Entry point del analizador de rutinas de entrenamiento.
+analyze.py — Entry point for the training routine analyzer.
 
-Modos disponibles (--mode):
-  global       (default) Análisis completo de todo el historial. Detecta tendencias
-               y evalúa si se está cumpliendo el objetivo a largo plazo.
-  new-routine  Post pdf2xls: analiza la nueva rutina contra el historial.
-               ¿Sirve para el objetivo? ¿Qué cambiaría?
-  monthly      Balance del mes más reciente. ¿Cómo fue? ¿Se cumplió el objetivo?
-  weekly       Compara la semana actual con la anterior (cron domingos).
+Available modes (--mode):
+  global       (default) Full analysis of the entire history. Detects trends
+               and evaluates whether the long-term goal is being met.
+  new-routine  Post pdf2xls: analyzes the new routine against the history.
+               Is it suitable for the goal? What would change?
+  monthly      Balance of the most recent month. How did it go? Was the goal met?
+  weekly       Compares the current week with the previous one (Sunday cron).
 
-Flujo:
-  1. Conecta a Google Sheets con la service account.
-  2. Carga los períodos necesarios según el modo.
-  3. Construye el prompt apropiado y llama a Groq.
-  4. Guarda el análisis en un archivo .md y opcionalmente lo manda por email.
+Flow:
+  1. Connects to Google Sheets with the service account.
+  2. Loads the necessary periods according to the mode.
+  3. Builds the appropriate prompt and calls Groq.
+  4. Saves the analysis to a .md file and optionally sends it by email.
 
-Uso mínimo (config en .env):
+Minimal usage (config in .env):
     python3 analyze.py
     python3 analyze.py --mode new-routine
     python3 analyze.py --mode weekly --mock
@@ -33,7 +33,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from helpers.reader import get_service, load_all_periods, get_latest_week_indices, extract_week_data
-from helpers.ai import analyze
+from helpers.ai import analyze, translate_to_spanish
 from helpers.mailer import send_analysis
 
 load_dotenv()
@@ -41,23 +41,23 @@ load_dotenv()
 HASH_FILE_TEMPLATE = ".last_data_hash_{mode}"
 
 EMAIL_SUBJECTS = {
-    "global":      lambda d: f"Análisis global — {d}",
-    "new-routine": lambda d: f"Nueva rutina — ¿Sirve para el objetivo?",
-    "monthly":     lambda d: f"Balance mensual — {d}",
-    "weekly":      lambda d: f"Semana de entrenamiento — {d}",
+    "global":      lambda d: f"Global analysis — {d}",
+    "new-routine": lambda d: f"New routine — Is it suitable for the goal?",
+    "monthly":     lambda d: f"Monthly balance — {d}",
+    "weekly":      lambda d: f"Training week — {d}",
 }
 
 
 def compute_hash(data):
-    """Genera un hash MD5 del contenido serializado para detectar cambios."""
+    """Generates an MD5 hash of the serialized content to detect changes."""
     content = json.dumps(data, sort_keys=True, ensure_ascii=False)
     return hashlib.md5(content.encode()).hexdigest()
 
 
 def has_changed(data, mode):
     """
-    Retorna True si los datos cambiaron desde la última ejecución del modo dado.
-    Actualiza el archivo de hash si hubo cambios.
+    Returns True if the data has changed since the last run of the given mode.
+    Updates the hash file if there were changes.
     """
     hash_file = Path(HASH_FILE_TEMPLATE.format(mode=mode.replace("-", "_")))
     current_hash = compute_hash(data)
@@ -81,8 +81,8 @@ def main():
     parser.add_argument("--sheets-id",      default=os.getenv("SHEETS_ID"))
     parser.add_argument("--credentials",    default=os.getenv("CREDENTIALS"))
     parser.add_argument("--api-key",        default=os.getenv("GROQ_API_KEY"))
-    parser.add_argument("--goal",           default=os.getenv("GOAL", "hipertrofia"),
-        help="Training objective injected into all prompts (default: hipertrofia)")
+    parser.add_argument("--goal",           default=os.getenv("GOAL", "hypertrophy"),
+        help="Training objective injected into all prompts (default: hypertrophy)")
     parser.add_argument("--mock",           action="store_true")
     parser.add_argument("--max-periods",    type=int, default=None)
     parser.add_argument("--email-to",       default=os.getenv("EMAIL_TO"))
@@ -112,7 +112,7 @@ def main():
 
     print(f"Found {len(periods)} period(s): {', '.join(p['period'] for p in periods)}")
 
-    # --- Preparar datos según el modo y detectar cambios ---
+    # --- Prepare data according to the mode and detect changes ---
 
     current_week_data = None
     prev_week_data    = None
@@ -126,13 +126,13 @@ def main():
             print("No data found in the current period for weekly analysis.")
             sys.exit(1)
 
-        current_week_num  = current_idx + 1  # convertir a 1-based para mostrar
+        current_week_num  = current_idx + 1  # convert to 1-based for display
         current_week_data = extract_week_data(current_period, current_idx)
         prev_week_data    = extract_week_data(current_period, prev_idx) if prev_idx is not None else None
 
         change_data = current_week_data
     elif args.mode == "new-routine":
-        change_data = periods[0]["days"]  # solo la nueva rutina
+        change_data = periods[0]["days"]  # only the new routine
     elif args.mode == "monthly":
         change_data = periods[0]
     else:
@@ -154,9 +154,13 @@ def main():
         current_week_num=current_week_num,
     )
 
+    if not args.mock:
+        print("Translating to Spanish...")
+        analysis = translate_to_spanish(analysis, args.api_key)
+
     ANALYSES_DIR.mkdir(exist_ok=True)
 
-    # Eliminar el análisis anterior de este modo antes de guardar el nuevo
+    # Delete the previous analysis of this mode before saving the new one
     for old_file in ANALYSES_DIR.glob(f"analysis_{args.mode}_*.md"):
         old_file.unlink()
 
@@ -175,4 +179,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

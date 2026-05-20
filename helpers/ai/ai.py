@@ -1,65 +1,66 @@
 """
-helpers/ai.py — Integración con Groq para análisis de progresiones de entrenamiento.
+helpers/ai.py — Groq integration for training progression analysis.
 
-Responsabilidades:
-  - Transformar los datos de períodos en prompts específicos por modo.
-  - Llamar al modelo LLaMA 3 via Groq API con esos prompts.
-  - Retornar el análisis como string listo para guardar.
+Responsibilities:
+  - Transform period data into mode-specific prompts.
+  - Call the LLaMA 3 model via the Groq API with those prompts.
+  - Return the analysis as a string ready to save.
 
-Modos disponibles:
-  - global:       Análisis completo de todo el historial. Detecta tendencias,
-                  estancamientos y evalúa si se está cumpliendo el objetivo.
-  - new-routine:  Analiza la nueva rutina (recién generada, sin datos de ejecución)
-                  contra el historial. ¿Sirve para el objetivo? ¿Qué cambiaría?
-  - monthly:      Balance mensual del período más reciente con ejecución completa.
-                  ¿Cómo fue el mes? ¿Se cumplió el objetivo?
-  - weekly:       Compara la semana actual con la anterior en el período activo.
-                  ¿Fue una buena semana? ¿Mejoró?
+Available modes:
+  - global:       Full analysis of the entire history. Detects trends,
+                  plateaus and evaluates whether the goal is being met.
+  - new-routine:  Analyzes the new routine (just generated, no execution data)
+                  against the history. Is it suitable for the goal? What would change?
+  - monthly:      Monthly balance of the most recent period with complete execution data.
+                  How did the month go? Was the goal met?
+  - weekly:       Compares the current week with the previous one in the active period.
+                  Was it a good week? Did it improve?
 
-Diseño del prompt ejercicio-céntrico (modo global/monthly):
-  En lugar de analizar período por período, agrupa los datos por ejercicio
-  y muestra la evolución cronológica. Esto permite detectar tendencias a
-  largo plazo en vez de comparar snapshots aislados.
+Exercise-centric prompt design (global/monthly modes):
+  Instead of analyzing period by period, groups data by exercise
+  and shows the chronological evolution. This allows detecting long-term
+  trends instead of comparing isolated snapshots.
 """
 
 from groq import Groq
 
 MODEL = "llama-3.3-70b-versatile"
 
-_BASE_SYSTEM_PROMPT = """Sos un coach de fitness profesional y analista de datos de entrenamiento.
+_BASE_SYSTEM_PROMPT = """You are a professional fitness coach and training data analyst.
 
-Cómo interpretar los datos:
-- "Rep." = repeticiones REALIZADAS por el usuario en esa serie (no las esperadas).
-- "Peso" = peso usado en kg. A veces contiene notas de texto en lugar de o además del número
-  (ej: "8 agarre / 2 sin agarre", "3 con 3kg / 5 sin peso"). Estas notas son observaciones
-  importantes del usuario sobre cómo fue la serie — tenelas en cuenta en el análisis.
-- Si "Peso" es "0" o vacío, el ejercicio se hizo con peso corporal o sin carga externa.
-- Los datos están ordenados: Semana 1 → 2 → 3 → 4, con 3 series por semana.
+How to interpret the data:
+- "Rep." = repetitions PERFORMED by the user in that set (not the expected ones).
+- "Peso" = weight used in kg. Sometimes contains text notes instead of or in addition to the number
+  (e.g. "8 overhand / 2 underhand", "3 with 3kg / 5 bodyweight"). These notes are important
+  user observations about how the set went — take them into account in the analysis.
+- If "Peso" is "0" or empty, the exercise was done with bodyweight or no external load.
+- Data is ordered: Week 1 → 2 → 3 → 4, with 3 sets per week.
 
-Respondé en español. Sé concreto y referenciá ejercicios y números reales de los datos.
-No uses frases genéricas — cada observación debe estar respaldada por datos específicos."""
+Be concrete and reference real exercise names and numbers from the data.
+Do not use generic phrases — every observation must be backed by specific data."""
 
 
 def _make_system_prompt(goal):
-    return f"{_BASE_SYSTEM_PROMPT}\n\nObjetivo del usuario: **{goal}**."
+    return f"{_BASE_SYSTEM_PROMPT}\n\nUser goal: **{goal}**."
 
 
 def _create_client(api_key):
-    """Crea y retorna el cliente autenticado de Groq."""
+    """Creates and returns the authenticated Groq client."""
     return Groq(api_key=api_key)
 
 
-def _call_groq(client, system_prompt, user_prompt):
+def _call_groq(client, system_prompt, user_prompt, max_tokens=4096):
     """
-    Hace una llamada al modelo de Groq y retorna el texto de la respuesta.
+    Makes a call to the Groq model and returns the response text.
 
     Args:
-        client:        Instancia de Groq autenticada.
-        system_prompt: Instrucción de sistema con rol y contexto.
-        user_prompt:   Datos y pregunta a enviar al modelo.
+        client:        Authenticated Groq instance.
+        system_prompt: System instruction with role and context.
+        user_prompt:   Data and question to send to the model.
+        max_tokens:    Maximum tokens in the response.
 
     Returns:
-        String con la respuesta generada por el modelo.
+        String with the response generated by the model.
     """
     response = client.chat.completions.create(
         model=MODEL,
@@ -67,7 +68,7 @@ def _call_groq(client, system_prompt, user_prompt):
             {"role": "system", "content": system_prompt},
             {"role": "user",   "content": user_prompt},
         ],
-        max_tokens=4096,
+        max_tokens=max_tokens,
     )
     return response.choices[0].message.content
 
@@ -78,9 +79,9 @@ def _call_groq(client, system_prompt, user_prompt):
 
 def _format_exercise_history(periods):
     """
-    Genera el bloque de texto con el historial ejercicio-céntrico.
-    Agrupa todas las apariciones de cada ejercicio ordenadas cronológicamente.
-    Solo incluye semanas/series con al menos un dato cargado.
+    Generates the text block with the exercise-centric history.
+    Groups all occurrences of each exercise ordered chronologically.
+    Only includes weeks/sets with at least one data point loaded.
     """
     ordered = list(reversed(periods))
     exercise_history = {}
@@ -99,7 +100,7 @@ def _format_exercise_history(periods):
                             peso = s["peso"] or "-"
                             series_parts.append(f"S{idx+1}:{reps}r/{peso}kg")
                     if series_parts:
-                        weeks_with_data.append(f"Sem{w['week']}: {' '.join(series_parts)}")
+                        weeks_with_data.append(f"Wk{w['week']}: {' '.join(series_parts)}")
 
                 if weeks_with_data:
                     if name not in exercise_history:
@@ -120,12 +121,12 @@ def _format_exercise_history(periods):
 
 def _format_routine_structure(period):
     """
-    Formatea la estructura de ejercicios de un período sin datos de ejecución.
-    Útil para new-routine donde el tab todavía no tiene reps/pesos cargados.
+    Formats the exercise structure of a period without execution data.
+    Useful for new-routine where the tab doesn't have reps/weights loaded yet.
     """
     lines = []
     for day in period["days"]:
-        lines.append(f"Día {day['day']}:")
+        lines.append(f"Day {day['day']}:")
         for ex in day["exercises"]:
             lines.append(f"  - {ex['name']}")
         lines.append("")
@@ -133,10 +134,10 @@ def _format_routine_structure(period):
 
 
 def _format_week_data(week_data, week_label):
-    """Formatea los datos de una semana (output de extract_week_data)."""
+    """Formats the data for a week (output of extract_week_data)."""
     lines = [f"**{week_label}**"]
     for day in week_data:
-        lines.append(f"  Día {day['day']}:")
+        lines.append(f"  Day {day['day']}:")
         for ex in day["exercises"]:
             series_str = "  ".join(
                 f"S{i+1}:{s['reps'] or '-'}r/{s['peso'] or '-'}kg"
@@ -150,140 +151,140 @@ def _format_week_data(week_data, week_label):
 
 def build_global_prompt(periods, goal):
     """
-    Prompt para el modo global: análisis completo de todo el historial.
+    Prompt for global mode: full analysis of the entire history.
 
     Args:
-        periods: Todos los períodos disponibles (más reciente primero).
-        goal:    Objetivo del usuario (ej: "hipertrofia").
+        periods: All available periods (most recent first).
+        goal:    User goal (e.g. "hypertrophy").
 
     Returns:
-        String del prompt listo para enviar a la IA.
+        String of the prompt ready to send to the AI.
     """
     history_block = _format_exercise_history(periods)
     return (
-        f"Analizá la progresión completa de los siguientes ejercicios a lo largo del tiempo.\n"
-        f"Los datos están ordenados cronológicamente (más antiguo → más reciente).\n\n"
-        f"Generá un análisis global orientado al objetivo de **{goal}** que incluya:\n"
-        f"- Tendencia general de cada ejercicio (mejora, estancamiento, retroceso)\n"
-        f"- Ejercicios con mayor y menor progreso\n"
-        f"- Evaluación de si el historial apunta a cumplir el objetivo de {goal}\n"
-        f"- Señales de estancamiento con evidencia concreta\n"
-        f"- Recomendaciones concretas para los próximos ciclos\n\n"
+        f"Analyze the complete progression of the following exercises over time.\n"
+        f"Data is ordered chronologically (oldest → most recent).\n\n"
+        f"Generate a global analysis oriented toward the **{goal}** goal that includes:\n"
+        f"- General trend for each exercise (improvement, plateau, regression)\n"
+        f"- Exercises with the most and least progress\n"
+        f"- Evaluation of whether the history is on track to meet the {goal} goal\n"
+        f"- Plateau signals with concrete evidence\n"
+        f"- Concrete recommendations for the next cycles\n\n"
         f"{history_block}"
     )
 
 
 def build_new_routine_prompt(periods, goal):
     """
-    Prompt para el modo new-routine: evalúa la rutina recién generada.
+    Prompt for new-routine mode: evaluates the newly generated routine.
 
-    El primer período es la nueva rutina (sin datos de ejecución todavía).
-    El resto son el historial de períodos ejecutados.
+    The first period is the new routine (no execution data yet).
+    The rest are the history of executed periods.
 
     Args:
-        periods: Lista con al menos 1 período. periods[0] = nueva rutina.
-        goal:    Objetivo del usuario.
+        periods: List with at least 1 period. periods[0] = new routine.
+        goal:    User goal.
 
     Returns:
-        String del prompt listo para enviar a la IA.
+        String of the prompt ready to send to the AI.
     """
     new_period = periods[0]
     history    = periods[1:]
 
     routine_block  = _format_routine_structure(new_period)
-    history_block  = _format_exercise_history(history) if history else "(sin historial previo)"
+    history_block  = _format_exercise_history(history) if history else "(no previous history)"
 
     return (
-        f"Se acaba de generar una nueva rutina de entrenamiento.\n"
-        f"El objetivo del usuario es: **{goal}**.\n\n"
-        f"## Nueva rutina ({new_period['period']})\n\n"
+        f"A new training routine has just been generated.\n"
+        f"The user's goal is: **{goal}**.\n\n"
+        f"## New routine ({new_period['period']})\n\n"
         f"{routine_block}\n"
-        f"## Historial de entrenamiento previo\n\n"
+        f"## Previous training history\n\n"
         f"{history_block}\n"
-        f"Analizá:\n"
-        f"1. ¿Esta rutina es adecuada para el objetivo de {goal}? ¿Por qué?\n"
-        f"2. ¿Hay ejercicios que no aportan al objetivo o podrían mejorarse?\n"
-        f"3. ¿Qué cambios concretos harías a esta rutina dado el historial del usuario?\n"
-        f"4. ¿Hay patrones del historial que esta rutina aprovecha bien o ignora?\n"
+        f"Analyze:\n"
+        f"1. Is this routine suitable for the {goal} goal? Why?\n"
+        f"2. Are there exercises that don't contribute to the goal or could be improved?\n"
+        f"3. What concrete changes would you make to this routine given the user's history?\n"
+        f"4. Are there patterns from the history that this routine leverages well or ignores?\n"
     )
 
 
 def build_monthly_prompt(periods, goal):
     """
-    Prompt para el modo monthly: balance del mes más reciente.
+    Prompt for monthly mode: balance of the most recent month.
 
-    El primer período es el mes a analizar (con datos de ejecución completos).
-    El resto son el historial anterior para contexto.
+    The first period is the month to analyze (with complete execution data).
+    The rest are the previous history for context.
 
     Args:
-        periods: Lista de períodos. periods[0] = mes a analizar.
-        goal:    Objetivo del usuario.
+        periods: List of periods. periods[0] = month to analyze.
+        goal:    User goal.
 
     Returns:
-        String del prompt listo para enviar a la IA.
+        String of the prompt ready to send to the AI.
     """
     current_period = periods[0]
     history        = periods[1:]
 
     current_block = _format_exercise_history([current_period])
-    history_block = _format_exercise_history(history) if history else "(sin historial previo)"
+    history_block = _format_exercise_history(history) if history else "(no previous history)"
 
     return (
-        f"Hacé un balance del mes de entrenamiento **{current_period['period']}**.\n"
-        f"El objetivo del usuario es: **{goal}**.\n\n"
-        f"## Datos del mes\n\n"
+        f"Provide a balance of the training month **{current_period['period']}**.\n"
+        f"The user's goal is: **{goal}**.\n\n"
+        f"## Month data\n\n"
         f"{current_block}\n"
-        f"## Historial anterior (contexto)\n\n"
+        f"## Previous history (context)\n\n"
         f"{history_block}\n"
-        f"Analizá:\n"
-        f"1. ¿Se cumplió el objetivo de {goal} este mes? ¿Qué evidencia hay en los números?\n"
-        f"2. ¿Qué ejercicios progresaron bien? ¿Cuáles se estancaron o retrocedieron?\n"
-        f"3. ¿Cómo fue la consistencia y el volumen comparado con meses anteriores?\n"
-        f"4. ¿Qué ajustes recomendás para el próximo mes?\n"
+        f"Analyze:\n"
+        f"1. Was the {goal} goal met this month? What evidence is there in the numbers?\n"
+        f"2. Which exercises progressed well? Which plateaued or regressed?\n"
+        f"3. How was the consistency and volume compared to previous months?\n"
+        f"4. What adjustments do you recommend for next month?\n"
     )
 
 
 def build_weekly_prompt(period, current_week_data, prev_week_data, current_week_num, goal):
     """
-    Prompt para el modo weekly: compara la semana actual con la anterior.
+    Prompt for weekly mode: compares the current week with the previous one.
 
     Args:
-        period:            Período activo (dict con "period" key).
-        current_week_data: Output de extract_week_data para la semana actual.
-        prev_week_data:    Output de extract_week_data para la semana anterior.
-                           Puede ser None si es la primera semana del período.
-        current_week_num:  Número de semana actual (1-based, para mostrar en el prompt).
-        goal:              Objetivo del usuario.
+        period:            Active period (dict with "period" key).
+        current_week_data: Output of extract_week_data for the current week.
+        prev_week_data:    Output of extract_week_data for the previous week.
+                           Can be None if it's the first week of the period.
+        current_week_num:  Current week number (1-based, for display in the prompt).
+        goal:              User goal.
 
     Returns:
-        String del prompt listo para enviar a la IA.
+        String of the prompt ready to send to the AI.
     """
-    current_block = _format_week_data(current_week_data, f"Semana {current_week_num} (actual)")
+    current_block = _format_week_data(current_week_data, f"Week {current_week_num} (current)")
 
     if prev_week_data:
-        prev_block = _format_week_data(prev_week_data, f"Semana {current_week_num - 1} (anterior)")
+        prev_block = _format_week_data(prev_week_data, f"Week {current_week_num - 1} (previous)")
         comparison = (
-            f"## Semana anterior\n\n{prev_block}\n"
-            f"## Semana actual\n\n{current_block}\n"
-            f"Comparando con la semana anterior, analizá:\n"
-            f"1. ¿Mejoró el rendimiento general esta semana?\n"
-            f"2. ¿Qué ejercicios mejoraron (más peso o más reps)? ¿Cuáles bajaron?\n"
-            f"3. ¿Fue una buena semana para el objetivo de {goal}?\n"
-            f"4. ¿Qué ajustes recomendás para la semana que viene?\n"
+            f"## Previous week\n\n{prev_block}\n"
+            f"## Current week\n\n{current_block}\n"
+            f"Comparing with the previous week, analyze:\n"
+            f"1. Did overall performance improve this week?\n"
+            f"2. Which exercises improved (more weight or more reps)? Which declined?\n"
+            f"3. Was it a good week for the {goal} goal?\n"
+            f"4. What adjustments do you recommend for next week?\n"
         )
     else:
         comparison = (
-            f"## Semana actual (primera del período)\n\n{current_block}\n"
-            f"Es la primera semana del período, no hay semana anterior para comparar.\n"
-            f"Analizá:\n"
-            f"1. ¿Cómo arrancó el período en relación al objetivo de {goal}?\n"
-            f"2. ¿Hay algo llamativo en los números de esta primera semana?\n"
-            f"3. ¿Qué recomendás para la semana que viene?\n"
+            f"## Current week (first of the period)\n\n{current_block}\n"
+            f"This is the first week of the period, there is no previous week to compare.\n"
+            f"Analyze:\n"
+            f"1. How did the period start in relation to the {goal} goal?\n"
+            f"2. Is there anything notable in the numbers of this first week?\n"
+            f"3. What do you recommend for next week?\n"
         )
 
     return (
-        f"Análisis semanal del período **{period['period']}**.\n"
-        f"Objetivo del usuario: **{goal}**.\n\n"
+        f"Weekly analysis of period **{period['period']}**.\n"
+        f"User goal: **{goal}**.\n\n"
         f"{comparison}"
     )
 
@@ -294,98 +295,98 @@ def build_weekly_prompt(period, current_week_data, prev_week_data, current_week_
 
 _MOCK_OUTPUTS = {
     "global": """\
-# Análisis global (MOCK)
+# Global Analysis (MOCK)
 
-> ⚠️ Análisis de prueba — los datos son reales pero el análisis es inventado.
+> ⚠️ Test analysis — data is real but the analysis is made up.
 
-## Tendencias generales
+## General trends
 
-- **Press plano con barra**: progresión sostenida de ~60kg a ~75kg a lo largo del año. ✅
-- **Sentadilla clásica**: estancamiento en semanas 2-3, sin variación de peso en los últimos 2 períodos. ⚠️
-- **Dominada estricta**: retroceso leve, bajó de 8 reps a 6 en el último período. ❌
+- **Barbell flat press**: sustained progression from ~60kg to ~75kg over the year. ✅
+- **Classic squat**: plateau in weeks 2-3, no weight variation in the last 2 periods. ⚠️
+- **Strict pull-up**: slight regression, dropped from 8 reps to 6 in the last period. ❌
 
-## Evaluación del objetivo (hipertrofia)
+## Goal evaluation (hypertrophy)
 
-El volumen total aumentó un 15% en 6 meses. La progresión de carga en tren superior es compatible con hipertrofia. Tren inferior muestra estancamiento que limita el objetivo.
+Total volume increased by 15% over 6 months. Load progression in upper body is compatible with hypertrophy. Lower body shows plateau that limits the goal.
 
-## Recomendaciones
+## Recommendations
 
-1. Aumentar carga en sentadilla — 2 períodos sin cambios.
-2. Revisar técnica en dominadas antes de subir el volumen.
-3. Mantener la progresión en press plano, está funcionando bien.
+1. Increase load on squat — 2 periods without changes.
+2. Review pull-up technique before increasing volume.
+3. Maintain flat press progression, it's working well.
 
 ---
-*Corré sin `--mock` para obtener el análisis real generado por IA.*""",
+*Run without `--mock` to get the real AI-generated analysis.*""",
 
     "new-routine": """\
-# Nueva rutina (MOCK)
+# New Routine (MOCK)
 
-> ⚠️ Análisis de prueba — los datos son reales pero el análisis es inventado.
+> ⚠️ Test analysis — data is real but the analysis is made up.
 
-## ¿Sirve para hipertrofia?
+## Is it suitable for hypertrophy?
 
-La rutina tiene buena estructura: 4 días con separación de grupos musculares clara. La distribución de ejercicios compuestos + aislamiento es compatible con hipertrofia.
+The routine has a good structure: 4 days with clear muscle group separation. The compound + isolation exercise distribution is compatible with hypertrophy.
 
-## Puntos fuertes
+## Strengths
 
-- Press plano + inclinado cubre bien el pecho en distintos ángulos.
-- Sentadilla como ejercicio base de pierna es ideal para hipertrofia.
+- Flat + incline press covers the chest well at different angles.
+- Squat as the main leg exercise is ideal for hypertrophy.
 
-## Cambios sugeridos
+## Suggested changes
 
-1. Reemplazar "Curl predicador" por "Curl martillo" — el historial muestra más consistencia con agarre neutro.
-2. Agregar un ejercicio de isquiotibiales (peso muerto rumano) — el historial no los trabaja en 3 períodos.
+1. Replace "Preacher curl" with "Hammer curl" — history shows more consistency with neutral grip.
+2. Add a hamstring exercise (Romanian deadlift) — history doesn't work them for 3 periods.
 
 ---
-*Corré sin `--mock` para obtener el análisis real generado por IA.*""",
+*Run without `--mock` to get the real AI-generated analysis.*""",
 
     "monthly": """\
-# Balance mensual (MOCK)
+# Monthly Balance (MOCK)
 
-> ⚠️ Análisis de prueba — los datos son reales pero el análisis es inventado.
+> ⚠️ Test analysis — data is real but the analysis is made up.
 
-## ¿Se cumplió el objetivo de hipertrofia?
+## Was the hypertrophy goal met?
 
-Parcialmente. El volumen fue alto (semanas 1-3) pero cayó en semana 4, probablemente por fatiga acumulada.
+Partially. Volume was high (weeks 1-3) but dropped in week 4, probably due to accumulated fatigue.
 
-## Progresiones del mes
+## Month progressions
 
-- ✅ Press plano: +5kg respecto al mes anterior en semana 3.
-- ✅ Remo con barra: +2 reps promedio en todas las semanas.
-- ⚠️ Sentadilla: peso estable, sin progresión.
+- ✅ Flat press: +5kg compared to the previous month in week 3.
+- ✅ Barbell row: +2 average reps across all weeks.
+- ⚠️ Squat: stable weight, no progression.
 
-## Recomendaciones para el próximo mes
+## Recommendations for next month
 
-1. Planificar deload en semana 4 — la caída de rendimiento es recurrente.
-2. Aumentar carga en sentadilla al menos un 5%.
+1. Plan a deload in week 4 — performance drop is recurring.
+2. Increase squat load by at least 5%.
 
 ---
-*Corré sin `--mock` para obtener el análisis real generado por IA.*""",
+*Run without `--mock` to get the real AI-generated analysis.*""",
 
     "weekly": """\
-# Análisis semanal (MOCK)
+# Weekly Analysis (MOCK)
 
-> ⚠️ Análisis de prueba — los datos son reales pero el análisis es inventado.
+> ⚠️ Test analysis — data is real but the analysis is made up.
 
-## ¿Mejoró respecto a la semana anterior?
+## Did it improve compared to last week?
 
-Sí, en general. 4 de 6 ejercicios principales mejoraron en peso o reps.
+Yes, overall. 4 out of 6 main exercises improved in weight or reps.
 
-## Detalle
+## Details
 
-- ✅ Press plano: 70kg → 72.5kg en serie 1. Buena progresión.
-- ✅ Dominadas: 6 → 7 reps en todas las series.
-- ⚠️ Sentadilla: igual que la semana anterior (60kg × 10).
-- ❌ Curl de bíceps: bajó 1 rep en series 2 y 3 — posible fatiga.
+- ✅ Flat press: 70kg → 72.5kg in set 1. Good progression.
+- ✅ Pull-ups: 6 → 7 reps in all sets.
+- ⚠️ Squat: same as last week (60kg × 10).
+- ❌ Bicep curl: dropped 1 rep in sets 2 and 3 — possible fatigue.
 
-## Para la semana que viene
+## For next week
 
-1. Intentar 75kg en press plano en la primera serie.
-2. Agregar 2.5kg en sentadilla.
-3. Descansá bien antes del día de bíceps.
+1. Attempt 75kg on flat press in the first set.
+2. Add 2.5kg on squat.
+3. Rest well before bicep day.
 
 ---
-*Corré sin `--mock` para obtener el análisis real generado por IA.*""",
+*Run without `--mock` to get the real AI-generated analysis.*""",
 }
 
 
@@ -393,23 +394,42 @@ Sí, en general. 4 de 6 ejercicios principales mejoraron en peso o reps.
 # Public API
 # ---------------------------------------------------------------------------
 
+def translate_to_spanish(text, api_key):
+    """
+    Translates the given text to Spanish using Groq.
+
+    Args:
+        text:    The text to translate (Markdown analysis).
+        api_key: Groq API key.
+
+    Returns:
+        String with the translated text in Spanish.
+    """
+    client = _create_client(api_key)
+    system = (
+        "You are a professional translator. Translate the following text to Spanish. "
+        "Keep markdown formatting intact. Do not add any commentary — only return the translated text."
+    )
+    return _call_groq(client, system, text, max_tokens=4096)
+
+
 def analyze(periods, api_key, mock=False, mode="global", goal="hipertrofia",
             current_week_data=None, prev_week_data=None, current_week_num=None):
     """
-    Genera un análisis de entrenamiento según el modo solicitado.
+    Generates a training analysis according to the requested mode.
 
     Args:
-        periods:          Lista de períodos (más reciente primero).
-        api_key:          API key de Groq.
-        mock:             Si True, retorna un análisis de prueba sin llamar a la API.
-        mode:             Modo de análisis: 'global', 'new-routine', 'monthly', 'weekly'.
-        goal:             Objetivo del usuario (ej: 'hipertrofia').
-        current_week_data: Datos de la semana actual (solo modo 'weekly').
-        prev_week_data:   Datos de la semana anterior (solo modo 'weekly', puede ser None).
-        current_week_num: Número de semana actual 1-based (solo modo 'weekly').
+        periods:           List of periods (most recent first).
+        api_key:           Groq API key.
+        mock:              If True, returns a test analysis without calling the API.
+        mode:              Analysis mode: 'global', 'new-routine', 'monthly', 'weekly'.
+        goal:              User goal (e.g. 'hypertrophy').
+        current_week_data: Current week data (only for 'weekly' mode).
+        prev_week_data:    Previous week data (only for 'weekly' mode, can be None).
+        current_week_num:  Current week number 1-based (only for 'weekly' mode).
 
     Returns:
-        String con el análisis en Markdown.
+        String with the analysis in Markdown.
     """
     if mock:
         return _MOCK_OUTPUTS.get(mode, _MOCK_OUTPUTS["global"])
@@ -429,5 +449,3 @@ def analyze(periods, api_key, mock=False, mode="global", goal="hipertrofia",
     system = _make_system_prompt(goal)
     print(f"  Sending [{mode}] prompt to Groq...", flush=True)
     return _call_groq(client, system, prompt)
-
-

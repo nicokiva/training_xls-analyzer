@@ -1,13 +1,13 @@
 """
-helpers/mailer.py — Envío del análisis por email via Gmail SMTP.
+helpers/mailer.py — Sending the analysis by email via Gmail SMTP.
 
-Usa la librería smtplib de la standard library (sin dependencias extra).
+Uses the smtplib standard library (no extra dependencies).
 
-Para que funcione necesitás una App Password de Google:
-  1. Activar verificación en dos pasos en tu cuenta Gmail.
-  2. Ir a myaccount.google.com → Seguridad → Contraseñas de aplicaciones.
-  3. Crear una para "Mail" → copiar la contraseña de 16 caracteres.
-  4. Usar esa contraseña en --email-password (NO la contraseña real de Gmail).
+To make it work you need a Google App Password:
+  1. Enable two-step verification on your Gmail account.
+  2. Go to myaccount.google.com → Security → App passwords.
+  3. Create one for "Mail" → copy the 16-character password.
+  4. Use that password in --email-password (NOT your real Gmail password).
 """
 
 import smtplib
@@ -15,26 +15,26 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 SMTP_HOST = "smtp.gmail.com"
-SMTP_PORT = 587  # Puerto TLS estándar de Gmail
+SMTP_PORT = 587  # Standard Gmail TLS port
 
 
 def send_analysis(from_email, password, to_email, subject, body):
     """
-    Envía el análisis por email usando Gmail SMTP con TLS.
+    Sends the analysis by email using Gmail SMTP with TLS.
 
-    El cuerpo se manda como texto plano (Markdown legible directamente
-    en cualquier cliente de email).
+    The body is sent as plain text (Markdown readable directly
+    in any email client).
 
     Args:
-        from_email: Dirección Gmail desde donde se manda (ej: "vos@gmail.com").
-        password:   App Password de Google de 16 caracteres.
-        to_email:   Dirección destino del email.
-        subject:    Asunto del email.
-        body:       Cuerpo del email (el análisis en Markdown).
+        from_email: Gmail address to send from (e.g. "you@gmail.com").
+        password:   Google App Password (16 characters).
+        to_email:   Destination email address.
+        subject:    Email subject.
+        body:       Email body (the analysis in Markdown).
 
     Raises:
-        smtplib.SMTPAuthenticationError: Si la contraseña o usuario son incorrectos.
-        smtplib.SMTPException: Para cualquier otro error de envío.
+        smtplib.SMTPAuthenticationError: If the password or user are incorrect.
+        smtplib.SMTPException: For any other sending error.
     """
     msg = MIMEMultipart()
     msg["From"] = from_email
@@ -42,7 +42,7 @@ def send_analysis(from_email, password, to_email, subject, body):
     msg["Subject"] = subject
     msg.attach(MIMEText(body, "plain", "utf-8"))
 
-    # Conectar, iniciar TLS y autenticar antes de mandar
+    # Connect, start TLS and authenticate before sending
     with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
         server.ehlo()
         server.starttls()

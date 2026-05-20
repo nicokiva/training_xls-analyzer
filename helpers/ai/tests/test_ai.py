@@ -72,8 +72,8 @@ class TestFormatExerciseHistory:
 
     def test_only_weeks_with_data_are_included(self):
         result = _format_exercise_history([PERIOD_A])
-        # Press plano only has week 1 data — Sem3 and Sem4 should not appear for it
-        # We check that "Sem3" doesn't appear for Press plano block
+        # Press plano only has week 1 data — Wk3 and Wk4 should not appear for it
+        # We check that "Wk3" doesn't appear for Press plano block
         lines = result.split("\n")
         press_idx = next(i for i, l in enumerate(lines) if "Press plano" in l)
         # Find lines belonging to press block (until next blank or next exercise)
@@ -83,8 +83,8 @@ class TestFormatExerciseHistory:
                 break
             press_lines.append(line)
         combined = " ".join(press_lines)
-        assert "Sem3" not in combined
-        assert "Sem4" not in combined
+        assert "Wk3" not in combined
+        assert "Wk4" not in combined
 
     def test_empty_periods_returns_empty_string(self):
         result = _format_exercise_history([])
@@ -130,7 +130,7 @@ class TestBuildNewRoutinePrompt:
 
     def test_without_history(self):
         prompt = build_new_routine_prompt([PERIOD_A], goal="test")
-        assert "sin historial" in prompt
+        assert "no previous history" in prompt
 
 
 # ---------------------------------------------------------------------------
@@ -151,11 +151,11 @@ class TestBuildWeeklyPrompt:
 
     def test_with_prev_week(self):
         prompt = build_weekly_prompt(PERIOD_A, self._week_data(), self._week_data(), 2, "test")
-        assert "anterior" in prompt.lower()
+        assert "previous" in prompt.lower()
 
     def test_without_prev_week_mentions_primera(self):
         prompt = build_weekly_prompt(PERIOD_A, self._week_data(), None, 1, "test")
-        assert "primera" in prompt.lower()
+        assert "first" in prompt.lower()
 
     def test_contains_exercise_name(self):
         prompt = build_weekly_prompt(PERIOD_A, self._week_data(), None, 1, "test")

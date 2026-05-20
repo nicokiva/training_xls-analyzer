@@ -1,5 +1,6 @@
 from .ai import (
     analyze,
+    translate_to_spanish,
     build_global_prompt,
     build_new_routine_prompt,
     build_monthly_prompt,
@@ -11,6 +12,7 @@ from .ai import (
 
 __all__ = [
     "analyze",
+    "translate_to_spanish",
     "build_global_prompt",
     "build_new_routine_prompt",
     "build_monthly_prompt",

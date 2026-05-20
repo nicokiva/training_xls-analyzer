@@ -1,45 +1,45 @@
 """
-helpers/reader.py — Lectura y parseo de los tabs del Google Sheets de rutinas.
+helpers/reader.py — Reading and parsing tabs from the training routines Google Sheet.
 
-Responsabilidades:
-  - Autenticar con la API de Google Sheets (read-only) usando una service account.
-  - Listar todos los tabs del spreadsheet en orden de posición.
-  - Leer las celdas crudas de cada tab.
-  - Parsear esas celdas en una estructura de datos Python usable.
+Responsibilities:
+  - Authenticate with the Google Sheets API (read-only) using a service account.
+  - List all tabs in the spreadsheet in position order.
+  - Read the raw cells from each tab.
+  - Parse those cells into a usable Python data structure.
 
-Estructura de cada tab en el spreadsheet:
-  Cada tab representa un período de entrenamiento (ej: "18/05/26-14/06/26")
-  y contiene bloques de días con el siguiente layout:
+Structure of each tab in the spreadsheet:
+  Each tab represents a training period (e.g. "18/05/26-14/06/26")
+  and contains day blocks with the following layout:
 
-    Fila 0: "Dia N"          ← nombre del día (ej: "Dia 1")
-    Fila 1: 1 "" 1 "" ...    ← número de serie (1, 2, 3) repetido por semana
-    Fila 2: Rep. Peso ...    ← etiquetas de columna, 4 semanas × 3 series × 2 cols
-    Fila 3+: ejercicios      ← col A = nombre, luego reps/peso alternados
-    (fila vacía entre días)
+    Row 0: "Dia N"          ← day name (e.g. "Dia 1")
+    Row 1: 1 "" 1 "" ...    ← set number (1, 2, 3) repeated per week
+    Row 2: Rep. Peso ...    ← column labels, 4 weeks × 3 sets × 2 cols
+    Row 3+: exercises       ← col A = name, then alternating reps/weight
+    (empty row between days)
 
-  Columnas de datos: 4 semanas × 3 series × 2 campos (Rep + Peso) = 24 columnas
-  + 1 columna de nombre = 25 columnas totales (A:Y).
+  Data columns: 4 weeks × 3 sets × 2 fields (Rep + Peso) = 24 columns
+  + 1 name column = 25 total columns (A:Y).
 """
 
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
-# Permiso de solo lectura — suficiente para leer el spreadsheet
+# Read-only permission — sufficient to read the spreadsheet
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
-N_WEEKS = 4    # semanas por período
-N_SERIES = 3   # series por ejercicio por semana
+N_WEEKS = 4    # weeks per period
+N_SERIES = 3   # sets per exercise per week
 
 
 def get_service(credentials_path):
     """
-    Crea y retorna el cliente autenticado de la API de Google Sheets.
+    Creates and returns the authenticated Google Sheets API client.
 
     Args:
-        credentials_path: Ruta al archivo JSON de la service account de Google.
+        credentials_path: Path to the Google service account JSON file.
 
     Returns:
-        Resource de la API de Google Sheets v4.
+        Google Sheets API v4 Resource.
     """
     creds = service_account.Credentials.from_service_account_file(
         credentials_path, scopes=SCOPES
@@ -49,17 +49,17 @@ def get_service(credentials_path):
 
 def list_tabs(service, spreadsheet_id):
     """
-    Retorna los nombres de todos los tabs del spreadsheet en orden de posición.
+    Returns the names of all tabs in the spreadsheet in position order.
 
-    El tab en índice 0 es siempre el más reciente (pdf2xls-generator lo inserta
-    al frente cada vez que procesa un PDF nuevo).
+    The tab at index 0 is always the most recent (pdf2xls-generator inserts it
+    at the front each time it processes a new PDF).
 
     Args:
-        service:        Resource de la API de Google Sheets.
-        spreadsheet_id: ID del spreadsheet (la parte larga de la URL de Google Sheets).
+        service:        Google Sheets API Resource.
+        spreadsheet_id: ID of the spreadsheet (the long part of the Google Sheets URL).
 
     Returns:
-        Lista de strings con los nombres de los tabs, ej:
+        List of strings with the tab names, e.g.:
         ["18/05/26-14/06/26", "20/04/26-15/05/26", ...]
     """
     meta = service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
@@ -68,20 +68,19 @@ def list_tabs(service, spreadsheet_id):
 
 def read_tab(service, spreadsheet_id, tab_name):
     """
-    Lee todas las celdas de un tab y las retorna como lista de listas de strings.
+    Reads all cells from a tab and returns them as a list of lists of strings.
 
-    Las filas vacías al final no son incluidas por la API. Las celdas vacías
-    dentro de una fila sí aparecen como strings vacíos (o pueden estar ausentes
-    si son las últimas de la fila).
+    Trailing empty rows are not included by the API. Empty cells within a row
+    do appear as empty strings (or may be absent if they are the last in the row).
 
     Args:
-        service:        Resource de la API de Google Sheets.
-        spreadsheet_id: ID del spreadsheet.
-        tab_name:       Nombre exacto del tab a leer.
+        service:        Google Sheets API Resource.
+        spreadsheet_id: ID of the spreadsheet.
+        tab_name:       Exact name of the tab to read.
 
     Returns:
-        Lista de filas, cada fila es una lista de strings.
-        Ej: [["Dia 1", "", ...], ["", "1", "", "1", ...], ...]
+        List of rows, each row is a list of strings.
+        E.g.: [["Dia 1", "", ...], ["", "1", "", "1", ...], ...]
     """
     result = (
         service.spreadsheets()
@@ -94,17 +93,17 @@ def read_tab(service, spreadsheet_id, tab_name):
 
 def parse_tab(rows):
     """
-    Parsea las filas crudas de un tab y devuelve una lista estructurada de días.
+    Parses the raw rows from a tab and returns a structured list of days.
 
-    Recorre las filas buscando encabezados de día ("Dia N"), luego lee los
-    ejercicios que siguen hasta encontrar una fila vacía u otro encabezado.
-    Para cada ejercicio extrae las reps y pesos de las 4 semanas × 3 series.
+    Iterates through the rows looking for day headers ("Dia N"), then reads the
+    exercises that follow until an empty row or another header is found.
+    For each exercise extracts the reps and weights for 4 weeks × 3 sets.
 
     Args:
-        rows: Lista de filas crudas (output de read_tab).
+        rows: List of raw rows (output of read_tab).
 
     Returns:
-        Lista de días con el siguiente formato:
+        List of days with the following format:
         [
           {
             "day": 1,
@@ -120,13 +119,13 @@ def parse_tab(rows):
                       {"reps": "10", "peso": "60"},
                     ]
                   },
-                  ... (semanas 2, 3, 4)
+                  ... (weeks 2, 3, 4)
                 ]
               },
               ...
             ]
           },
-          ... (días 2, 3, 4)
+          ... (days 2, 3, 4)
         ]
     """
     days = []
@@ -140,7 +139,7 @@ def parse_tab(rows):
 
         first_cell = row[0].strip() if row[0] else ""
 
-        # Detectar encabezado de día ("Dia 1", "Dia 2", etc.)
+        # Detect day header ("Dia 1", "Dia 2", etc.)
         if first_cell.lower().startswith("dia"):
             try:
                 day_num = int(first_cell.split()[-1])
@@ -148,37 +147,37 @@ def parse_tab(rows):
                 i += 1
                 continue
 
-            # Saltar las 2 filas de encabezado que siguen al "Dia N":
-            # - fila de números de serie (1, "", 1, "", ..., 2, "", ...)
-            # - fila de etiquetas (Rep., Peso, Rep., Peso, ...)
+            # Skip the 2 header rows that follow "Dia N":
+            # - row of set numbers (1, "", 1, "", ..., 2, "", ...)
+            # - row of labels (Rep., Peso, Rep., Peso, ...)
             i += 3
             exercises = []
 
             while i < len(rows):
                 ex_row = rows[i]
 
-                # Una fila vacía o con col A vacía indica fin del bloque de este día
+                # An empty row or one with empty col A indicates end of this day's block
                 if not ex_row or not ex_row[0]:
                     i += 1
                     break
 
-                # Si la siguiente fila es otro "Dia N", terminar sin avanzar
+                # If the next row is another "Dia N", stop without advancing
                 if ex_row[0].strip().lower().startswith("dia"):
                     break
 
-                # Leer el ejercicio: nombre + 4 semanas × 3 series × (reps, peso)
+                # Read the exercise: name + 4 weeks × 3 sets × (reps, weight)
                 name = ex_row[0].strip()
                 weeks = []
-                col = 1  # las columnas de datos empiezan en col 1 (B)
+                col = 1  # data columns start at col 1 (B)
 
                 for w in range(N_WEEKS):
                     series = []
                     for s in range(N_SERIES):
-                        # Acceder con fallback a "" si la fila es más corta de lo esperado
+                        # Access with fallback to "" if the row is shorter than expected
                         reps = ex_row[col].strip() if col < len(ex_row) else ""
                         peso = ex_row[col + 1].strip() if (col + 1) < len(ex_row) else ""
                         series.append({"reps": reps, "peso": peso})
-                        col += 2  # avanzar 2 columnas (Rep + Peso)
+                        col += 2  # advance 2 columns (Rep + Peso)
                     weeks.append({"week": w + 1, "series": series})
 
                 exercises.append({"name": name, "weeks": weeks})
@@ -193,26 +192,26 @@ def parse_tab(rows):
 
 def get_latest_week_indices(period):
     """
-    Detecta qué semanas tienen datos cargados en el período y retorna los
-    índices (0-based) de la semana actual y la anterior.
+    Detects which weeks have data loaded in the period and returns the
+    indices (0-based) of the current and previous weeks.
 
-    Útil para el modo weekly: la "semana actual" es la última con algún dato,
-    y la "semana anterior" es la inmediatamente previa.
+    Useful for weekly mode: the "current week" is the last one with any data,
+    and the "previous week" is the immediately prior one.
 
     Args:
-        period: Dict con formato {"period": str, "days": [...]}.
+        period: Dict with format {"period": str, "days": [...]}.
 
     Returns:
-        Tupla (current_idx, prev_idx) con índices 0-based.
-        prev_idx es None si la semana actual es la primera.
-        Ambos son None si no hay datos en el período.
+        Tuple (current_idx, prev_idx) with 0-based indices.
+        prev_idx is None if the current week is the first.
+        Both are None if there is no data in the period.
     """
     weeks_with_data = set()
     for day in period["days"]:
         for ex in day["exercises"]:
             for w in ex["weeks"]:
                 if any(s["reps"] or s["peso"] for s in w["series"]):
-                    weeks_with_data.add(w["week"] - 1)  # convertir a 0-based
+                    weeks_with_data.add(w["week"] - 1)  # convert to 0-based
 
     if not weeks_with_data:
         return (None, None)
@@ -224,16 +223,16 @@ def get_latest_week_indices(period):
 
 def extract_week_data(period, week_idx):
     """
-    Extrae los datos de una semana específica de un período.
+    Extracts the data for a specific week from a period.
 
     Args:
-        period:   Dict con formato {"period": str, "days": [...]}.
-        week_idx: Índice 0-based de la semana a extraer.
+        period:   Dict with format {"period": str, "days": [...]}.
+        week_idx: 0-based index of the week to extract.
 
     Returns:
-        Lista de días con solo los datos de esa semana:
+        List of days with only the data for that week:
         [{"day": N, "exercises": [{"name": str, "series": [...]}]}, ...]
-        Solo incluye ejercicios que tengan al menos un dato en esa semana.
+        Only includes exercises that have at least one data point in that week.
     """
     result = []
     for day in period["days"]:
@@ -251,18 +250,18 @@ def extract_week_data(period, week_idx):
 
 def load_all_periods(service, spreadsheet_id):
     """
-    Carga y parsea todos los tabs del spreadsheet.
+    Loads and parses all tabs from the spreadsheet.
 
-    Llama a list_tabs, luego por cada tab llama a read_tab y parse_tab,
-    y retorna la lista de períodos en el mismo orden que los tabs
-    (índice 0 = más reciente).
+    Calls list_tabs, then for each tab calls read_tab and parse_tab,
+    and returns the list of periods in the same order as the tabs
+    (index 0 = most recent).
 
     Args:
-        service:        Resource de la API de Google Sheets.
-        spreadsheet_id: ID del spreadsheet.
+        service:        Google Sheets API Resource.
+        spreadsheet_id: ID of the spreadsheet.
 
     Returns:
-        Lista de períodos:
+        List of periods:
         [
           {"period": "18/05/26-14/06/26", "days": [...]},
           {"period": "20/04/26-15/05/26", "days": [...]},
@@ -276,4 +275,3 @@ def load_all_periods(service, spreadsheet_id):
         days = parse_tab(rows)
         periods.append({"period": tab, "days": days})
     return periods
-
