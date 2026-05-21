@@ -51,10 +51,10 @@ HASH_FILE_TEMPLATE = ".last_data_hash_{mode}"
 # Lambda is a one-line anonymous function: lambda d: f"..." is equivalent to
 # def make_subject(d): return f"..."
 EMAIL_SUBJECTS = {
-    "global":      lambda d: f"Global analysis — {d}",
-    "new-routine": lambda d: f"New routine — Is it suitable for the goal?",
-    "monthly":     lambda d: f"Monthly balance — {d}",
-    "weekly":      lambda d: f"Training week — {d}",
+    "global":      lambda d: f"Análisis global — {d}",
+    "new-routine": lambda d: f"Nueva rutina — ¿Es adecuada para el objetivo?",
+    "monthly":     lambda d: f"Balance mensual — {d}",
+    "weekly":      lambda d: f"Semana de entrenamiento — {d}",
 }
 
 
