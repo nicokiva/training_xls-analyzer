@@ -27,7 +27,8 @@ import time
 
 from groq import Groq
 
-MODEL = "llama-3.3-70b-versatile"
+MODEL         = "llama-3.3-70b-versatile"  # default: 12k TPM
+MODEL_LARGE   = "llama-3.1-8b-instant"     # global analysis: 20k TPM (needed for multi-period prompts)
 
 # Templates are looked up relative to the project root (two levels up from this file).
 # Path(__file__) is the absolute path of this file.
@@ -84,16 +85,17 @@ def _make_system_prompt(goal):
 
 
 
-def _call_groq(client, system_prompt, user_prompt, max_tokens=4096):
+def _call_groq(client, system_prompt, user_prompt, max_tokens=4096, model=None):
     """
     Makes a call to the Groq model and returns the response text.
     Retries once after 65 seconds if the per-minute rate limit (TPM/413) is hit.
     If the daily limit (TPD/429) is hit, raises immediately with a clear message.
     """
+    used_model = model or MODEL
     for attempt in range(2):
         try:
             response = client.chat.completions.create(
-                model=MODEL,
+                model=used_model,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user",   "content": user_prompt},
@@ -104,12 +106,10 @@ def _call_groq(client, system_prompt, user_prompt, max_tokens=4096):
         except Exception as e:
             err = str(e)
             if "413" in err and attempt == 0:
-                # TPM limit: resets every minute — wait and retry once
                 print("  Rate limit hit (TPM) — waiting 65s for window to reset...")
                 time.sleep(65)
                 continue
             if "429" in err:
-                # TPD limit: daily quota exhausted — no point retrying
                 raise RuntimeError(
                     "Daily token limit reached (100k/day on free tier). "
                     "Try again tomorrow or upgrade at console.groq.com."
@@ -121,11 +121,48 @@ def _call_groq(client, system_prompt, user_prompt, max_tokens=4096):
 # Prompt builders
 # ---------------------------------------------------------------------------
 
+def _format_exercise_history_compact(periods):
+    """
+    Compact format for global analysis: one line per exercise showing peak weight
+    per period (oldest → newest). Reduces tokens by ~80% vs the verbose format,
+    which is enough for detecting long-term trends on the free Groq tier.
+
+    Output example:
+        **Sentadilla**: 09/25:80kg | 10/25:82kg | 11/25:82kg | 12/25:85kg → trend: +6%
+    """
+    ordered = list(reversed(periods))
+    # exercise_name → list of (period_label, peak_weight_str)
+    exercise_peaks = {}
+
+    for period_data in ordered:
+        period = period_data["period"]
+        for day_data in period_data["days"]:
+            for ex in day_data["exercises"]:
+                name = ex["name"]
+                # Collect all numeric weights across all weeks/sets
+                weights = []
+                for w in ex["weeks"]:
+                    for s in w["series"]:
+                        try:
+                            weights.append(float(s["peso"]))
+                        except (TypeError, ValueError):
+                            pass
+                if weights:
+                    peak = max(weights)
+                    if name not in exercise_peaks:
+                        exercise_peaks[name] = []
+                    exercise_peaks[name].append(f"{period[:5]}:{peak:.0f}kg")
+
+    lines = []
+    for name, entries in exercise_peaks.items():
+        lines.append(f"**{name}**: {' | '.join(entries)}")
+    return "\n".join(lines)
+
+
 def _format_exercise_history(periods):
     """
-    Generates the text block with the exercise-centric history.
-    Groups all occurrences of each exercise ordered chronologically.
-    Only includes weeks/sets with at least one data point loaded.
+    Verbose format: full set-by-set data per period.
+    Used for monthly and new-routine modes where detail matters.
     """
     ordered = list(reversed(periods))
     exercise_history = {}
@@ -195,13 +232,11 @@ def _format_week_data(week_data, week_label):
 
 def build_global_prompt(periods, goal):
     """
-    Prompt for global mode: full analysis of the entire history.
-    Capped at 6 most recent periods to stay within Groq's free tier limits (~58k tokens for 11 periods).
+    Prompt for global mode: full history using compact format (peak weight per period).
+    Uses all periods — compact format keeps it under 12k TPM even with 11 periods.
     Loads from templates/global.txt if available, otherwise uses hardcoded default.
     """
-    # 6 periods ≈ 30k tokens, well within the 100k daily limit even after other requests
-    capped_periods = periods[:6]
-    history_block = _format_exercise_history(capped_periods)
+    history_block = _format_exercise_history_compact(periods)
     result = _load_template("global", goal=goal, history=history_block)
     if result:
         return result
@@ -482,4 +517,6 @@ def analyze(periods, api_key, mock=False, mode="global", goal="hipertrofia",
     client = Groq(api_key=api_key)
     system = _make_system_prompt(goal)
     print(f"  Sending [{mode}] prompt to Groq...", flush=True)
-    return _call_groq(client, system, prompt)
+    # Global uses the compact format so it fits in 12k TPM — no special model needed
+    used_model = None
+    return _call_groq(client, system, prompt, model=used_model)
