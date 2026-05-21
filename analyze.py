@@ -33,7 +33,7 @@ from pathlib import Path       # Path is the modern way to handle file paths in 
 
 from dotenv import load_dotenv  # third-party: reads .env file into environment variables
 
-from helpers.reader import get_service, load_all_periods, get_latest_week_indices, extract_week_data
+from helpers.reader import get_service, load_all_periods, get_latest_week_indices, extract_week_data, get_active_period, get_last_completed_period
 from helpers.ai import analyze, translate_to_spanish
 from helpers.mailer import send_analysis
 from helpers.events import consume_pending_events, mark_event_processed
@@ -104,45 +104,47 @@ EVENT_TO_MODE = {
 }
 
 
-def run_analysis(mode, args, service, periods):
+def run_analysis(mode, args, service, periods, periods_override=None):
     """
     Runs one analysis mode end-to-end: build prompt → call AI → translate → save → email.
 
-    Extracted from main() so it can be called both from the CLI path (single mode)
-    and from the event-consumer path (one call per pending event).
-
     Args:
-        mode:    One of "global", "monthly", "new-routine", "weekly".
-        args:    The parsed argparse Namespace (carries api_key, goal, mock, email flags, etc.)
-        service: Authenticated Google Sheets service object (already connected).
-        periods: List of period dicts loaded from Google Sheets.
+        mode:             One of "global", "monthly", "new-routine", "weekly".
+        args:             The parsed argparse Namespace.
+        service:          Authenticated Google Sheets service object.
+        periods:          Full list of periods (used by global and weekly).
+        periods_override: If provided, replaces periods[0] for monthly/new-routine.
+                          Used by the routine:uploaded handler to pass the correct
+                          period (last completed for monthly, active for new-routine).
 
     Returns:
-        True if the analysis was run and emailed, False if skipped (no changes).
+        True if the analysis ran and was emailed, False if skipped (no changes).
     """
     today = datetime.now().strftime("%d/%m/%Y")
 
-    # Weekly mode needs extra data extracted from the current period.
+    # For monthly and new-routine, allow the caller to specify which period to use.
+    # For global and weekly, periods[0] is always the right starting point.
+    target_period = periods_override if periods_override is not None else periods[0]
+
     current_week_data = None
     prev_week_data    = None
     current_week_num  = None
 
     if mode == "weekly":
-        current_period = periods[0]
-        current_idx, prev_idx = get_latest_week_indices(current_period)
+        current_idx, prev_idx = get_latest_week_indices(target_period)
 
         if current_idx is None:
             print("No data found in the current period for weekly analysis.")
             return False
 
         current_week_num  = current_idx + 1
-        current_week_data = extract_week_data(current_period, current_idx)
-        prev_week_data    = extract_week_data(current_period, prev_idx) if prev_idx is not None else None
+        current_week_data = extract_week_data(target_period, current_idx)
+        prev_week_data    = extract_week_data(target_period, prev_idx) if prev_idx is not None else None
         change_data       = current_week_data
     elif mode == "new-routine":
-        change_data = periods[0]["days"]
+        change_data = target_period["days"]
     elif mode == "monthly":
-        change_data = periods[0]
+        change_data = target_period
     else:
         change_data = periods
 
@@ -151,9 +153,12 @@ def run_analysis(mode, args, service, periods):
         print(f"[{mode}] No changes since last run. Skipping.")
         return False
 
+    # Build a periods list where index 0 is the target period, for prompt builders.
+    periods_for_prompt = [target_period] + [p for p in periods if p is not target_period]
+
     print(f"[{mode}] Analyzing with Groq...")
     analysis = analyze(
-        periods,
+        periods_for_prompt,
         args.api_key,
         mock=args.mock,
         mode=mode,
@@ -232,8 +237,6 @@ def main():
     print(f"Found {len(periods)} period(s): {', '.join(p['period'] for p in periods)}")
 
     # --- Event consumer mode (no --mode flag passed) ---
-    # Reads all pending events from events.db and runs each one in order.
-    # This is how pdf2xls-generator triggers analyses without calling us directly.
     if args.mode is None:
         events = consume_pending_events()
         if not events:
@@ -242,14 +245,37 @@ def main():
         print(f"Found {len(events)} pending event(s).")
         for event in events:
             event_type = event["event_type"]
-            mode = EVENT_TO_MODE.get(event_type)
-            if mode is None:
-                print(f"Unknown event type: {event_type!r} — skipping.")
-                mark_event_processed(event["id"])
-                continue
             print(f"\nProcessing event: {event_type}")
-            run_analysis(mode, args, service, periods)
-            # Mark as processed regardless of result so we don't retry indefinitely.
+
+            if event_type == EventType.ROUTINE_UPLOADED:
+                # Semantic event from pdf2xls-generator: a full upload cycle just completed.
+                # We run 3 analyses, each using the correct period:
+                #   - monthly + global → last COMPLETED period (Fecha-Fecha, not the new one)
+                #   - new-routine      → current ACTIVE period (Fecha-...)
+                last_completed = get_last_completed_period(periods)
+                active         = get_active_period(periods)
+
+                if last_completed:
+                    print(f"  Last completed period: {last_completed['period']}")
+                    run_analysis("monthly",     args, service, periods, periods_override=last_completed)
+                    run_analysis("global",      args, service, periods)
+                else:
+                    print("  No completed period found — skipping monthly and global.")
+
+                if active:
+                    print(f"  Active period: {active['period']}")
+                    run_analysis("new-routine", args, service, periods, periods_override=active)
+                else:
+                    print("  No active period found — skipping new-routine.")
+
+            else:
+                # Manual run:* events (triggered via CLI or for testing)
+                mode = EVENT_TO_MODE.get(event_type)
+                if mode is None:
+                    print(f"  Unknown event type: {event_type!r} — skipping.")
+                else:
+                    run_analysis(mode, args, service, periods)
+
             mark_event_processed(event["id"])
         return
 

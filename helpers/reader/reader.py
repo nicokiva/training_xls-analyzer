@@ -251,22 +251,7 @@ def extract_week_data(period, week_idx):
 def load_all_periods(service, spreadsheet_id):
     """
     Loads and parses all tabs from the spreadsheet.
-
-    Calls list_tabs, then for each tab calls read_tab and parse_tab,
-    and returns the list of periods in the same order as the tabs
-    (index 0 = most recent).
-
-    Args:
-        service:        Google Sheets API Resource.
-        spreadsheet_id: ID of the spreadsheet.
-
-    Returns:
-        List of periods:
-        [
-          {"period": "18/05/26-14/06/26", "days": [...]},
-          {"period": "20/04/26-15/05/26", "days": [...]},
-          ...
-        ]
+    Returns periods ordered with index 0 = most recent.
     """
     tabs = list_tabs(service, spreadsheet_id)
     periods = []
@@ -275,3 +260,34 @@ def load_all_periods(service, spreadsheet_id):
         days = parse_tab(rows)
         periods.append({"period": tab, "days": days})
     return periods
+
+
+def is_active_period(period):
+    """
+    Returns True if this period is still ongoing (its tab name ends with '-...').
+    Active periods don't have an end date yet because the routine is still running.
+    """
+    return period["period"].endswith("-...")
+
+
+def get_active_period(periods):
+    """
+    Returns the currently active period (tab ending in '-...'), or None if not found.
+    There should normally be exactly one active period.
+    """
+    for p in periods:
+        if is_active_period(p):
+            return p
+    return None
+
+
+def get_last_completed_period(periods):
+    """
+    Returns the most recently completed period (first tab NOT ending in '-...').
+    'Most recently completed' = the first one in the list that has a full Fecha-Fecha name.
+    Returns None if all periods are active (shouldn't happen in practice).
+    """
+    for p in periods:
+        if not is_active_period(p):
+            return p
+    return None
