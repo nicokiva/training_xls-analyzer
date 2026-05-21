@@ -48,6 +48,10 @@ How to interpret the data:
   user observations about how the set went — take them into account in the analysis.
 - If "Peso" is "0" or empty, the exercise was done with bodyweight or no external load.
 - Data is ordered: Week 1 → 2 → 3 → 4, with 3 sets per week.
+- Exercises marked as *(combinado)* or (combinado) are performed back-to-back in a superset
+  with minimal rest. Their weights are intentionally lower than isolated exercises — do NOT
+  interpret lower weights in combined exercises as regression or decline. There can be multiple
+  independent combined groups within the same day.
 
 Be concrete and reference real exercise names and numbers from the data.
 Do not use generic phrases — every observation must be backed by specific data.
@@ -124,22 +128,20 @@ def _call_groq(client, system_prompt, user_prompt, max_tokens=4096, model=None):
 def _format_exercise_history_compact(periods):
     """
     Compact format for global analysis: one line per exercise showing peak weight
-    per period (oldest → newest). Reduces tokens by ~80% vs the verbose format,
-    which is enough for detecting long-term trends on the free Groq tier.
-
-    Output example:
-        **Sentadilla**: 09/25:80kg | 10/25:82kg | 11/25:82kg | 12/25:85kg → trend: +6%
+    per period (oldest → newest). Combined exercises are labelled with (combinado)
+    so the AI doesn't mistake their naturally lower weights for regression.
     """
     ordered = list(reversed(periods))
-    # exercise_name → list of (period_label, peak_weight_str)
-    exercise_peaks = {}
+    exercise_peaks  = {}   # name → list of "period:peak"
+    exercise_is_comb = {}  # name → bool
 
     for period_data in ordered:
         period = period_data["period"]
         for day_data in period_data["days"]:
             for ex in day_data["exercises"]:
                 name = ex["name"]
-                # Collect all numeric weights across all weeks/sets
+                if ex.get("is_comb"):
+                    exercise_is_comb[name] = True
                 weights = []
                 for w in ex["weeks"]:
                     for s in w["series"]:
@@ -155,23 +157,28 @@ def _format_exercise_history_compact(periods):
 
     lines = []
     for name, entries in exercise_peaks.items():
-        lines.append(f"**{name}**: {' | '.join(entries)}")
+        label = f"**{name}**" + (" *(combinado)*" if exercise_is_comb.get(name) else "")
+        lines.append(f"{label}: {' | '.join(entries)}")
     return "\n".join(lines)
 
 
 def _format_exercise_history(periods):
     """
     Verbose format: full set-by-set data per period.
-    Used for monthly and new-routine modes where detail matters.
+    Combined exercises are labelled with (combinado) so the AI understands
+    their weights are intentionally lower (performed back-to-back, less rest).
     """
     ordered = list(reversed(periods))
     exercise_history = {}
+    exercise_is_comb = {}
 
     for period_data in ordered:
         period = period_data["period"]
         for day_data in period_data["days"]:
             for ex in day_data["exercises"]:
                 name = ex["name"]
+                if ex.get("is_comb"):
+                    exercise_is_comb[name] = True
                 weeks_with_data = []
                 for w in ex["weeks"]:
                     series_parts = []
@@ -193,7 +200,8 @@ def _format_exercise_history(periods):
 
     lines = []
     for name, history in exercise_history.items():
-        lines.append(f"**{name}**")
+        label = f"**{name}**" + (" *(combinado)*" if exercise_is_comb.get(name) else "")
+        lines.append(label)
         for entry in history:
             lines.append(f"  {entry['period']}: {entry['data']}")
         lines.append("")
@@ -204,28 +212,32 @@ def _format_routine_structure(period):
     """
     Formats the exercise structure of a period without execution data.
     Useful for new-routine where the tab doesn't have reps/weights loaded yet.
+    Combined exercises are marked with (combinado).
     """
     lines = []
     for day in period["days"]:
         lines.append(f"Day {day['day']}:")
         for ex in day["exercises"]:
-            lines.append(f"  - {ex['name']}")
+            label = ex['name'] + (" (combinado)" if ex.get("is_comb") else "")
+            lines.append(f"  - {label}")
         lines.append("")
     return "\n".join(lines)
 
 
 def _format_week_data(week_data, week_label):
-    """Formats the data for a week (output of extract_week_data)."""
+    """Formats the data for a week (output of extract_week_data).
+    Combined exercises are marked with (combinado)."""
     lines = [f"**{week_label}**"]
     for day in week_data:
         lines.append(f"  Day {day['day']}:")
         for ex in day["exercises"]:
+            label = ex['name'] + (" (combinado)" if ex.get("is_comb") else "")
             series_str = "  ".join(
                 f"S{i+1}:{s['reps'] or '-'}r/{s['peso'] or '-'}kg"
                 for i, s in enumerate(ex["series"])
                 if s["reps"] or s["peso"]
             )
-            lines.append(f"    {ex['name']}: {series_str}")
+            lines.append(f"    {label}: {series_str}")
     lines.append("")
     return "\n".join(lines)
 

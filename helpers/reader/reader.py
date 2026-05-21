@@ -166,7 +166,13 @@ def parse_tab(rows):
                     break
 
                 # Read the exercise: name + 4 weeks × 3 sets × (reps, weight)
-                name = ex_row[0].strip()
+                # Combined exercises are prefixed with "[C] " in the sheet —
+                # they are performed back-to-back with less rest, so weights are
+                # naturally lower than isolated exercises and should not be treated
+                # as a regression by the AI.
+                raw_name = ex_row[0].strip()
+                is_comb  = raw_name.startswith("[C] ")
+                name     = raw_name[4:] if is_comb else raw_name
                 weeks = []
                 col = 1  # data columns start at col 1 (B)
 
@@ -180,7 +186,7 @@ def parse_tab(rows):
                         col += 2  # advance 2 columns (Rep + Peso)
                     weeks.append({"week": w + 1, "series": series})
 
-                exercises.append({"name": name, "weeks": weeks})
+                exercises.append({"name": name, "is_comb": is_comb, "weeks": weeks})
                 i += 1
 
             days.append({"day": day_num, "exercises": exercises})
