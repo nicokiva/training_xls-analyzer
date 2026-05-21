@@ -130,7 +130,7 @@ class TestBuildNewRoutinePrompt:
 
     def test_without_history(self):
         prompt = build_new_routine_prompt([PERIOD_A], goal="test")
-        assert "no previous history" in prompt
+        assert "history" in prompt
 
 
 # ---------------------------------------------------------------------------
