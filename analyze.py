@@ -219,6 +219,8 @@ def main():
     # store_true means the flag is a boolean: present = True, absent = False
     parser.add_argument("--mock",           action="store_true")
     parser.add_argument("--max-periods",    type=int, default=None)
+    parser.add_argument("--target-period",  default=None,
+                        help="Tab name to use as target period for monthly/new-routine, e.g. '20/04/26-15/05/26'")
     parser.add_argument("--email-to",       default=os.getenv("EMAIL_TO"))
     parser.add_argument("--email-from",     default=os.getenv("EMAIL_FROM"))
     parser.add_argument("--email-password", default=os.getenv("EMAIL_PASSWORD"))
@@ -309,7 +311,14 @@ def main():
 
     # --- Single-mode CLI path (--mode was passed explicitly) ---
     print(f"Mode: {args.mode} | Goal: {args.goal}")
-    run_analysis(args.mode, args, service, periods)
+    target_override = None
+    if args.target_period:
+        target_override = next((p for p in periods if p["period"] == args.target_period), None)
+        if target_override is None:
+            print(f"Error: period '{args.target_period}' not found. Available: {[p['period'] for p in periods]}")
+            sys.exit(1)
+        print(f"Using target period: {target_override['period']}")
+    run_analysis(args.mode, args, service, periods, periods_override=target_override)
 
 
 # This block only runs when the script is executed directly with python3.
