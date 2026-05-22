@@ -333,7 +333,24 @@ def build_weekly_prompt(period, current_week_data, prev_week_data, current_week_
     Prompt for weekly mode: compares the current week with the previous one.
     Loads from templates/weekly.txt (with prev week) or templates/weekly_first.txt (no prev).
     """
-    current_block = _format_week_data(current_week_data, f"Week {current_week_num} (current)")
+    # Total weeks in this period (only count weeks that have at least one data point)
+    total_weeks = sum(
+        1 for day in period["days"]
+        for ex in day["exercises"]
+        for w in ex["weeks"]
+        if any(s["reps"] or s["peso"] for s in w["series"])
+    )
+    # Deduplicate: count unique week indices that have data
+    weeks_with_data = set(
+        w["week"]
+        for day in period["days"]
+        for ex in day["exercises"]
+        for w in ex["weeks"]
+        if any(s["reps"] or s["peso"] for s in w["series"])
+    )
+    total_weeks = len(weeks_with_data)
+
+    current_block = _format_week_data(current_week_data, f"Week {current_week_num} (current, last with data)")
 
     if prev_week_data:
         prev_block = _format_week_data(prev_week_data, f"Week {current_week_num - 1} (previous)")
@@ -343,7 +360,8 @@ def build_weekly_prompt(period, current_week_data, prev_week_data, current_week_
         if result:
             return result
         return (
-            f"Weekly analysis of period **{period['period']}**.\n"
+            f"Weekly analysis of period **{period['period']}** "
+            f"(this period has {total_weeks} week(s) of data; week {current_week_num} is the last one with data — do NOT mention missing weeks).\n"
             f"User goal: **{goal}**.\n\n"
             f"## Previous week\n\n{prev_block}\n"
             f"## Current week\n\n{current_block}\n"
@@ -359,7 +377,8 @@ def build_weekly_prompt(period, current_week_data, prev_week_data, current_week_
         if result:
             return result
         return (
-            f"Weekly analysis of period **{period['period']}**.\n"
+            f"Weekly analysis of period **{period['period']}** "
+            f"(this period has {total_weeks} week(s) of data; week {current_week_num} is the last one with data — do NOT mention missing weeks).\n"
             f"User goal: **{goal}**.\n\n"
             f"## Current week (first of the period)\n\n{current_block}\n"
             f"This is the first week of the period, there is no previous week to compare.\n"
