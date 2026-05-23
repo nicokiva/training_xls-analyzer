@@ -3,19 +3,31 @@
 analyze.py — Entry point for the training routine analyzer.
 
 Available modes (--mode):
-  global       (default) Full analysis of the entire history. Detects trends
+  global       Full analysis of the entire history. Detects trends
                and evaluates whether the long-term goal is being met.
   new-routine  Post pdf2xls: analyzes the new routine against the history.
-               Is it suitable for the goal? What would change?
   monthly      Balance of the most recent month. How did it go? Was the goal met?
-  weekly       Compares the current week with the previous one (Sunday cron).
+  weekly       Compares the current week with the previous one.
+
+Scheduled runs (NOT YET ACTIVE — enable via crontab when ready):
+  weekly  → Saturdays at 12:00
+              cron: 0 12 * * 6 cd /path/to/routine-analyzer && python3 analyze.py --mode weekly
+
+  global  → Saturdays at 12:00, BUT only if the last training day of the active
+              period is complete (all exercises have at least one peso filled in,
+              excluding the abdomen group).
+              Requires a pre-check before calling run_analysis("global", ...).
+              cron: 0 12 * * 6 cd /path/to/routine-analyzer && python3 analyze.py --mode global
+
+  (no-args) → Daily at 08:00, to detect and close completed periods
+              (runs monthly + global + renames the tab when 2 open tabs are found).
+              cron: 0 8 * * * cd /path/to/routine-analyzer && python3 analyze.py
 
 Flow:
   1. Connects to Google Sheets with the service account.
   2. Loads the necessary periods according to the mode.
   3. Builds the appropriate prompt and calls Groq.
-  4. Translates the analysis to Spanish.
-  5. Saves the analysis to a .md file and sends it by email.
+  4. Saves the analysis to a .md file and sends it by email.
 
 Minimal usage (config in .env):
     python3 analyze.py
