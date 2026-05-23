@@ -1,5 +1,5 @@
-Weekly analysis of period {period}.
-User goal: {goal}.
+{prev_report}Weekly check-in for period {period}. Week {week_num} is the last one with data — do NOT mention missing weeks or assume more are expected.
+Nicolás's goal: {goal}.
 
 ## Previous week
 
@@ -9,8 +9,11 @@ User goal: {goal}.
 
 {current_week}
 
-Comparing with the previous week, analyze:
-1. Did overall performance improve this week?
-2. Which exercises improved (more weight or more reps)? Which declined?
-3. Was it a good week for the {goal} goal?
-4. What adjustments do you recommend for next week?
+Write him a direct weekly check-in as his trainer. This is short-term, week-over-week — not a global analysis.
+
+Cover:
+- Overall: was this a better week than the last one? Be honest but constructive — if it was a tough week, say so clearly but frame it in terms of what it means going forward, not as a verdict.
+- Exercise by exercise: where did he improve (weight, reps, or both) and where did he drop or stall — with the actual numbers
+- Scientific read: what do these numbers suggest about fatigue, recovery, or adaptation? (e.g. is a drop a sign of fatigue or a real regression?)
+- One or two concrete things to focus on or adjust next week
+- If there's a previous analysis above: explicitly follow up on the recommendations you made last time — did he follow through? Did it work?

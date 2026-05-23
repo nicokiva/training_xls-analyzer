@@ -1,0 +1,316 @@
+"""
+helpers/writer/writer.py — Writes AI weight suggestions back to the Google Sheet.
+
+Responsibilities:
+  - Parse the JSON suggestions block embedded in the AI new-routine response.
+  - Find the corresponding exercise rows in the target tab.
+  - Write suggested peso values to empty peso cells with italic formatting.
+  - Write suggested rest times to col Z (Pausa), merging for combined groups.
+  - Format suggestions as HTML for the email (grouped by day, with reasons).
+
+Sheet layout (matching reader.py):
+  Col 0 (A): exercise name
+  For week W (0-indexed) and set S (0-indexed):
+    reps col = 1 + W * (N_SERIES * 2) + S * 2
+    peso col = 1 + W * (N_SERIES * 2) + S * 2 + 1
+  Col Z (index 25): Pausa — suggested rest time (one per exercise or one per combined group)
+"""
+
+import json
+import re
+import unicodedata
+
+from helpers.reader.reader import N_WEEKS, N_SERIES
+
+# Col Z (0-based index 25): suggested rest time per exercise / combined group
+PAUSA_COL = N_WEEKS * N_SERIES * 2 + 1  # = 25
+
+
+# ---------------------------------------------------------------------------
+# Parsing
+# ---------------------------------------------------------------------------
+
+def parse_suggestions(ai_response):
+    """
+    Extracts the JSON suggestions block from the AI response.
+
+    The AI is asked to embed a ```json ... ``` block in its response.
+    Returns the parsed list of suggestion dicts, or None if not found/invalid.
+
+    Each suggestion dict has the shape:
+      {
+        "exercise": str,
+        "day": int,
+        "weeks": [float, float, float, float],  # one per week
+        "rest_s": int,
+        "reason": str
+      }
+    """
+    match = re.search(r"```json\s*([\s\S]*?)\s*```", ai_response)
+    if not match:
+        return None
+    try:
+        return json.loads(match.group(1))
+    except json.JSONDecodeError:
+        return None
+
+
+def strip_suggestions_block(ai_response):
+    """Removes the ```json ... ``` block from the AI response (for clean email body)."""
+    return re.sub(r"```json\s*[\s\S]*?\s*```", "", ai_response).strip()
+
+
+# ---------------------------------------------------------------------------
+# Writing to sheet
+# ---------------------------------------------------------------------------
+
+def _normalize(name):
+    """Lowercase + strip accents + remove parentheses/punctuation for fuzzy matching."""
+    nfkd = unicodedata.normalize("NFKD", name.lower().strip())
+    # Remove accents
+    no_accents = "".join(c for c in nfkd if not unicodedata.combining(c))
+    # Remove parentheses and their contents, then collapse spaces
+    no_parens = re.sub(r"\(.*?\)", "", no_accents)
+    return re.sub(r"\s+", " ", no_parens).strip()
+
+
+def _peso_col(week_idx, set_idx):
+    """Returns the 0-based column index for a peso cell."""
+    return 1 + week_idx * (N_SERIES * 2) + set_idx * 2 + 1
+
+
+def write_suggestions_to_sheet(service, spreadsheet_id, tab_name, suggestions):
+    """
+    Writes suggested peso values to empty peso cells in the tab, formatted as italic.
+
+    Only writes to cells that are currently empty — never overwrites actual training data.
+
+    Args:
+        service:        Google Sheets API client with write scope.
+        spreadsheet_id: ID of the spreadsheet.
+        tab_name:       Name of the tab (e.g. "ORIG18/05/26-...").
+        suggestions:    List of dicts from parse_suggestions().
+    """
+    if not suggestions:
+        return
+
+    # Safety guard: NEVER write to ORIG-prefixed tabs (they are read-only backups).
+    if tab_name.startswith("ORIG"):
+        print(f"  [writer] Refusing to write to ORIG tab '{tab_name}'. Aborting.")
+        return
+
+    # --- Get sheet numeric ID (needed for formatting requests) ---
+    meta = service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+    sheet_id = None
+    for s in meta["sheets"]:
+        if s["properties"]["title"] == tab_name:
+            sheet_id = s["properties"]["sheetId"]
+            break
+    if sheet_id is None:
+        print(f"  [writer] Tab '{tab_name}' not found in spreadsheet.")
+        return
+
+    # --- Read raw rows to find exercise row indices and existing values ---
+    result = (
+        service.spreadsheets()
+        .values()
+        .get(spreadsheetId=spreadsheet_id, range=f"'{tab_name}'")
+        .execute()
+    )
+    rows = result.get("values", [])
+
+    # Build name → (row_index, row) map (col A, skip header/day rows)
+    # Also record which rows are combined ("[C] " prefix) so we can detect
+    # the last exercise in each combined group for the Pausa column.
+    name_to_row = {}
+    row_is_comb  = {}   # row_idx → bool
+    for row_idx, row in enumerate(rows):
+        if not row or not row[0]:
+            continue
+        cell = row[0].strip()
+        if cell.lower().startswith("dia") or cell.lower() in ("rep.", "peso"):
+            continue
+        is_comb = cell.startswith("[C] ")
+        clean   = cell[4:] if is_comb else cell
+        name_to_row[_normalize(clean)] = (row_idx, row)
+        row_is_comb[row_idx] = is_comb
+
+    # Build a set of row indices that are the LAST in their combined group.
+    # A combined row is the last in its group when the next exercise row is NOT combined.
+    exercise_row_indices = sorted(name_to_row[k][0] for k in name_to_row)
+    last_of_comb_group   = set()
+    for i, ridx in enumerate(exercise_row_indices):
+        if not row_is_comb.get(ridx):
+            continue
+        next_ridx = exercise_row_indices[i + 1] if i + 1 < len(exercise_row_indices) else None
+        if next_ridx is None or not row_is_comb.get(next_ridx):
+            last_of_comb_group.add(ridx)
+
+    value_updates = []   # for values().batchUpdate()
+    format_requests = [] # for spreadsheets().batchUpdate()
+
+    for suggestion in suggestions:
+        ex_name = suggestion.get("exercise", "")
+        weeks   = suggestion.get("weeks", [])
+        rest_s  = suggestion.get("rest_s")
+        norm    = _normalize(ex_name)
+
+        # Fuzzy match: exact first, then substring
+        match = name_to_row.get(norm)
+        if match is None:
+            for key, val in name_to_row.items():
+                if norm in key or key in norm:
+                    match = val
+                    break
+        if match is None:
+            print(f"  [writer] Exercise not found in sheet: '{ex_name}'")
+            continue
+
+        row_idx, row = match
+
+        # ── Peso cells ──────────────────────────────────────────────────────
+        for week_idx, peso in enumerate(weeks[:N_WEEKS]):
+            if peso is None:
+                continue
+            peso_str = str(int(peso)) if peso == int(peso) else str(peso)
+
+            for set_idx in range(N_SERIES):
+                col = _peso_col(week_idx, set_idx)
+                existing = row[col].strip() if col < len(row) else ""
+                if existing:
+                    continue
+
+                col_letter = _col_letter(col)
+                cell_a1 = f"'{tab_name}'!{col_letter}{row_idx + 1}"
+
+                value_updates.append({"range": cell_a1, "values": [[peso_str]]})
+                format_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": sheet_id,
+                            "startRowIndex": row_idx,
+                            "endRowIndex": row_idx + 1,
+                            "startColumnIndex": col,
+                            "endColumnIndex": col + 1,
+                        },
+                        "cell": {"userEnteredFormat": {"textFormat": {"italic": True}}},
+                        "fields": "userEnteredFormat.textFormat.italic",
+                    }
+                })
+
+        # ── Pausa (col Z) ────────────────────────────────────────────────────
+        # For individual exercises: always write rest_s here.
+        # For combined groups: only write on the LAST exercise of the group
+        #   (the AI is told to send rest_s=null for non-last combined exercises,
+        #   but we also guard here in case the AI doesn't comply).
+        if rest_s is not None:
+            is_comb = row_is_comb.get(row_idx, False)
+            should_write = (not is_comb) or (row_idx in last_of_comb_group)
+            if should_write:
+                existing_z = row[PAUSA_COL].strip() if PAUSA_COL < len(row) else ""
+                if not existing_z:
+                    cell_z = f"'{tab_name}'!{_col_letter(PAUSA_COL)}{row_idx + 1}"
+                    value_updates.append({"range": cell_z, "values": [[f"{rest_s}s"]]})
+                    format_requests.append({
+                        "repeatCell": {
+                            "range": {
+                                "sheetId": sheet_id,
+                                "startRowIndex": row_idx,
+                                "endRowIndex": row_idx + 1,
+                                "startColumnIndex": PAUSA_COL,
+                                "endColumnIndex": PAUSA_COL + 1,
+                            },
+                            "cell": {"userEnteredFormat": {"textFormat": {"italic": True}}},
+                            "fields": "userEnteredFormat.textFormat.italic",
+                        }
+                    })
+
+    if not value_updates:
+        print("  [writer] No empty cells to fill.")
+        return
+
+    # Write values
+    service.spreadsheets().values().batchUpdate(
+        spreadsheetId=spreadsheet_id,
+        body={
+            "valueInputOption": "RAW",
+            "data": value_updates,
+        },
+    ).execute()
+
+    # Apply italic formatting
+    service.spreadsheets().batchUpdate(
+        spreadsheetId=spreadsheet_id,
+        body={"requests": format_requests},
+    ).execute()
+
+    print(f"  [writer] Wrote {len(value_updates)} suggested peso cell(s) to '{tab_name}'.")
+
+
+def _col_letter(col_idx):
+    """Converts a 0-based column index to a spreadsheet column letter (A, B, ..., Z, AA, ...)."""
+    result = ""
+    col_idx += 1  # 1-based
+    while col_idx:
+        col_idx, remainder = divmod(col_idx - 1, 26)
+        result = chr(65 + remainder) + result
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Email formatting
+# ---------------------------------------------------------------------------
+
+def format_suggestions_for_email(suggestions):
+    """
+    Formats the suggestions as an HTML section grouped by day.
+    Returns an HTML string (safe to embed in the Markdown body — the markdown
+    library passes raw HTML blocks through unchanged).
+    """
+    if not suggestions:
+        return ""
+
+    # Group by day
+    by_day = {}
+    for s in suggestions:
+        by_day.setdefault(s.get("day", 0), []).append(s)
+
+    parts = ["\n\n---\n\n## Pesos y pausas sugeridos para arrancar\n\n"]
+
+    for day in sorted(by_day):
+        parts.append(f"### Día {day}\n\n")
+        parts.append(
+            '<table class="sug-table">'
+            "<thead><tr>"
+            "<th>Ejercicio</th>"
+            "<th>Sem 1</th><th>Sem 2</th><th>Sem 3</th><th>Sem 4</th>"
+            "<th>Pausa</th>"
+            "<th>Por qué</th>"
+            "</tr></thead><tbody>"
+        )
+        for s in by_day[day]:
+            name    = s.get("exercise", "")
+            is_comb = s.get("is_comb", False)
+            weeks   = s.get("weeks", [None] * 4)
+            rest_s  = s.get("rest_s")
+            reason  = s.get("reason", "")
+
+            w = [(f"{v} kg" if v is not None else "—") for v in weeks]
+            rest_str = f"{rest_s}s" if rest_s else "—"
+            name_class = "comb" if is_comb else "name"
+            comb_note  = " <em>(combinado)</em>" if is_comb else ""
+
+            parts.append(
+                f"<tr>"
+                f'<td class="{name_class}">{name}{comb_note}</td>'
+                f'<td class="num">{w[0]}</td>'
+                f'<td class="num">{w[1]}</td>'
+                f'<td class="num">{w[2]}</td>'
+                f'<td class="num">{w[3]}</td>'
+                f'<td class="num">{rest_str}</td>'
+                f'<td class="why">{reason}</td>'
+                f"</tr>"
+            )
+        parts.append("</tbody></table>\n\n")
+
+    return "".join(parts)

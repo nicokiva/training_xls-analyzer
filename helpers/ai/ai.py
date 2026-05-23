@@ -39,24 +39,24 @@ TEMPLATES_DIR = Path(__file__).parent.parent.parent / "templates"
 # Hardcoded fallback prompts (used when the template file is missing)
 # ---------------------------------------------------------------------------
 
-_DEFAULT_SYSTEM = """You are a professional fitness coach and training data analyst.
+_DEFAULT_SYSTEM = """You are Nicolás's personal trainer. You have been training him for months and know his history, his progress, and his tendencies. You write directly to him, in first person, as if you were messaging him after reviewing his training data.
+
+**Always respond in Spanish (Argentina). Never mix languages.**
+
+Your tone is warm, direct, and motivating — like a good trainer who tells you the truth but always with encouragement. You celebrate real progress, point out plateaus clearly without being dramatic about it, and give concrete advice for what to do next. You never use filler phrases or generic observations — every comment is backed by specific numbers from the data. Avoid catastrophizing or using dramatic language — a tough week is just data, not a verdict.
+
+Important context: the training routine is designed and assigned by Nicolás's coach — it is fixed and not up for debate. The exercises and reps are set by the coach and cannot be changed. What Nicolás CAN adjust is the weight he uses and the rest time between sets. Your recommendations should focus exclusively on those two levers.
 
 How to interpret the data:
-- "Rep." = repetitions PERFORMED by the user in that set (not the expected ones).
-- "Peso" = weight used in kg. Sometimes contains text notes instead of or in addition to the number
-  (e.g. "8 overhand / 2 underhand", "3 with 3kg / 5 bodyweight"). These notes are important
-  user observations about how the set went — take them into account in the analysis.
-- If "Peso" is "0" or empty, the exercise was done with bodyweight or no external load.
+- "Rep." = reps PERFORMED (not the target).
+- "Peso" = weight in kg. Sometimes has text notes (e.g. "8 overhand / 2 underhand", "3 with 3kg / 5 bodyweight") — these are important observations from Nicolás about how the set went, factor them in.
+- "Peso" = 0 or empty means bodyweight or no external load.
 - Data is ordered: Week 1 → 2 → 3 → 4, with 3 sets per week.
-- Exercises marked as *(combinado)* or (combinado) are performed back-to-back in a superset
-  with minimal rest. Their weights are intentionally lower than isolated exercises — do NOT
-  interpret lower weights in combined exercises as regression or decline. There can be multiple
-  independent combined groups within the same day.
+- Each "day" (Day 1, Day 2, etc.) is a fixed training session that repeats every week. Day 1 of Week 1 and Day 1 of Week 2 are the same session done 7 days apart. The weeks show how performance on that same session evolves over the month.
+- Exercises marked as *(combinado)* or (combinado) are done back-to-back as a superset with minimal rest. Their weights are intentionally lower — do NOT read this as regression. There can be multiple independent combined groups in the same day.
+- Cell notes (marked as "Note:") are observations or instructions from the coach — take them into account in the analysis.
 
-Be concrete and reference real exercise names and numbers from the data.
-Do not use generic phrases — every observation must be backed by specific data.
-
-User goal: {goal}."""
+Nicolás's goal: {goal}."""
 
 
 def _load_template(name, **kwargs):
@@ -242,12 +242,14 @@ def _format_week_data(week_data, week_label):
     return "\n".join(lines)
 
 
+def _format_prev_report(prev_report):
+    """Returns a formatted block with the previous report, or empty string if None."""
+    if not prev_report:
+        return ""
+    return f"\n\n## Tu análisis anterior\n\n{prev_report}\n\n---\n"
+
+
 def build_global_prompt(periods, goal):
-    """
-    Prompt for global mode: full history using compact format (peak weight per period).
-    Uses all periods — compact format keeps it under 12k TPM even with 11 periods.
-    Loads from templates/global.txt if available, otherwise uses hardcoded default.
-    """
     history_block = _format_exercise_history_compact(periods)
     result = _load_template("global", goal=goal, history=history_block)
     if result:
@@ -255,92 +257,52 @@ def build_global_prompt(periods, goal):
     return (
         f"Analyze the complete progression of the following exercises over time.\n"
         f"Data is ordered chronologically (oldest → most recent).\n\n"
-        f"Generate a global analysis oriented toward the **{goal}** goal that includes:\n"
-        f"- General trend for each exercise (improvement, plateau, regression)\n"
-        f"- Exercises with the most and least progress\n"
-        f"- Evaluation of whether the history is on track to meet the {goal} goal\n"
-        f"- Plateau signals with concrete evidence\n"
-        f"- Concrete recommendations for the next cycles\n\n"
         f"{history_block}"
     )
 
 
 def build_new_routine_prompt(periods, goal):
-    """
-    Prompt for new-routine mode: evaluates the newly generated routine.
-    Limits history context to 3 previous periods to stay within Groq TPM limits.
-    Loads from templates/new-routine.txt if available.
-    """
     new_period    = periods[0]
-    # new-routine only needs the routine structure — no history to stay under TPM limits.
-    # The AI evaluates exercises against the goal based on the routine itself.
     routine_block = _format_routine_structure(new_period)
-    history_block = "(history omitted to stay within token limits)"
+    history_block = _format_exercise_history_compact(periods[1:]) if len(periods) > 1 else "(sin historial previo)"
 
     result = _load_template("new-routine", goal=goal, period=new_period["period"],
                             routine=routine_block, history=history_block)
     if result:
         return result
     return (
-        f"A new training routine has just been generated.\n"
-        f"The user's goal is: **{goal}**.\n\n"
-        f"## New routine ({new_period['period']})\n\n"
-        f"{routine_block}\n"
-        f"## Previous training history\n\n"
-        f"{history_block}\n"
-        f"Analyze:\n"
-        f"1. Is this routine suitable for the {goal} goal? Why?\n"
-        f"2. Are there exercises that don't contribute to the goal or could be improved?\n"
-        f"3. What concrete changes would you make to this routine given the user's history?\n"
-        f"4. Are there patterns from the history that this routine leverages well or ignores?\n"
+        f"Nueva rutina generada para el período {new_period['period']}.\n"
+        f"Objetivo: **{goal}**.\n\n"
+        f"## Estructura de la nueva rutina\n\n{routine_block}\n"
+        f"## Historial previo\n\n{history_block}\n"
     )
 
 
 def build_monthly_prompt(periods, goal):
-    """
-    Prompt for monthly mode: balance of the most recent month.
-    Limits history context to 3 previous periods to stay within Groq TPM limits.
-    Loads from templates/monthly.txt if available.
-    """
     current_period = periods[0]
-    # Monthly mode only needs the current month — no history context to stay under TPM limits
-    history        = []
+    history        = periods[1:4]
 
     current_block = _format_exercise_history([current_period])
-    history_block = _format_exercise_history(history) if history else "(no previous history)"
+    history_block = _format_exercise_history(history) if history else "(sin historial previo)"
 
     result = _load_template("monthly", goal=goal, period=current_period["period"],
                             current_block=current_block, history=history_block)
     if result:
         return result
     return (
-        f"Provide a balance of the training month **{current_period['period']}**.\n"
-        f"The user's goal is: **{goal}**.\n\n"
-        f"## Month data\n\n"
-        f"{current_block}\n"
-        f"## Previous history (context)\n\n"
-        f"{history_block}\n"
-        f"Analyze:\n"
-        f"1. Was the {goal} goal met this month? What evidence is there in the numbers?\n"
-        f"2. Which exercises progressed well? Which plateaued or regressed?\n"
-        f"3. How was the consistency and volume compared to previous months?\n"
-        f"4. What adjustments do you recommend for next month?\n"
+        f"Balance del mes **{current_period['period']}**.\n"
+        f"Objetivo: **{goal}**.\n\n"
+        f"## Datos del mes\n\n{current_block}\n"
+        f"## Historial previo\n\n{history_block}\n"
     )
 
 
-def build_weekly_prompt(period, current_week_data, prev_week_data, current_week_num, goal):
+def build_weekly_prompt(period, current_week_data, prev_week_data, current_week_num, goal,
+                        prev_report=None):
     """
     Prompt for weekly mode: compares the current week with the previous one.
     Loads from templates/weekly.txt (with prev week) or templates/weekly_first.txt (no prev).
     """
-    # Total weeks in this period (only count weeks that have at least one data point)
-    total_weeks = sum(
-        1 for day in period["days"]
-        for ex in day["exercises"]
-        for w in ex["weeks"]
-        if any(s["reps"] or s["peso"] for s in w["series"])
-    )
-    # Deduplicate: count unique week indices that have data
     weeks_with_data = set(
         w["week"]
         for day in period["days"]
@@ -351,41 +313,34 @@ def build_weekly_prompt(period, current_week_data, prev_week_data, current_week_
     total_weeks = len(weeks_with_data)
 
     current_block = _format_week_data(current_week_data, f"Week {current_week_num} (current, last with data)")
+    prev_block_report = _format_prev_report(prev_report)
 
     if prev_week_data:
         prev_block = _format_week_data(prev_week_data, f"Week {current_week_num - 1} (previous)")
         result = _load_template("weekly", goal=goal, period=period["period"],
                                 current_week=current_block, prev_week=prev_block,
-                                week_num=current_week_num)
+                                week_num=current_week_num, prev_report=prev_block_report)
         if result:
             return result
         return (
-            f"Weekly analysis of period **{period['period']}** "
-            f"(this period has {total_weeks} week(s) of data; week {current_week_num} is the last one with data — do NOT mention missing weeks).\n"
-            f"User goal: **{goal}**.\n\n"
+            f"{prev_block_report}"
+            f"Weekly check-in period **{period['period']}** "
+            f"(week {current_week_num} is the last with data — do NOT mention missing weeks).\n"
+            f"Goal: **{goal}**.\n\n"
             f"## Previous week\n\n{prev_block}\n"
             f"## Current week\n\n{current_block}\n"
-            f"Comparing with the previous week, analyze:\n"
-            f"1. Did overall performance improve this week?\n"
-            f"2. Which exercises improved (more weight or more reps)? Which declined?\n"
-            f"3. Was it a good week for the {goal} goal?\n"
-            f"4. What adjustments do you recommend for next week?\n"
         )
     else:
         result = _load_template("weekly_first", goal=goal, period=period["period"],
-                                current_week=current_block, week_num=current_week_num)
+                                current_week=current_block, week_num=current_week_num,
+                                prev_report=prev_block_report)
         if result:
             return result
         return (
-            f"Weekly analysis of period **{period['period']}** "
-            f"(this period has {total_weeks} week(s) of data; week {current_week_num} is the last one with data — do NOT mention missing weeks).\n"
-            f"User goal: **{goal}**.\n\n"
-            f"## Current week (first of the period)\n\n{current_block}\n"
-            f"This is the first week of the period, there is no previous week to compare.\n"
-            f"Analyze:\n"
-            f"1. How did the period start in relation to the {goal} goal?\n"
-            f"2. Is there anything notable in the numbers of this first week?\n"
-            f"3. What do you recommend for next week?\n"
+            f"{prev_block_report}"
+            f"First week of period **{period['period']}**.\n"
+            f"Goal: **{goal}**.\n\n"
+            f"## Week 1 data\n\n{current_block}\n"
         )
 
 
@@ -507,14 +462,17 @@ def translate_to_spanish(text, api_key):
     """
     client = Groq(api_key=api_key)
     system = (
-        "You are a professional translator. Translate the following text to Spanish. "
+        "You are a professional translator specializing in Argentine Spanish. "
+        "Translate the following text ENTIRELY to Spanish (Argentina). "
+        "Every single word must be in Spanish — do not leave any English words or phrases. "
         "Keep markdown formatting intact. Do not add any commentary — only return the translated text."
     )
     return _call_groq(client, system, text, max_tokens=4096)
 
 
 def analyze(periods, api_key, mock=False, mode="global", goal="hipertrofia",
-            current_week_data=None, prev_week_data=None, current_week_num=None):
+            current_week_data=None, prev_week_data=None, current_week_num=None,
+            prev_report=None):
     """
     Generates a training analysis according to the requested mode.
 
@@ -527,6 +485,8 @@ def analyze(periods, api_key, mock=False, mode="global", goal="hipertrofia",
         current_week_data: Current week data (only for 'weekly' mode).
         prev_week_data:    Previous week data (only for 'weekly' mode, can be None).
         current_week_num:  Current week number 1-based (only for 'weekly' mode).
+        prev_report:       Text of the previous analysis for this mode (Markdown).
+                           Passed to the prompt so the AI can follow up on prior recommendations.
 
     Returns:
         String with the analysis in Markdown.
@@ -540,7 +500,8 @@ def analyze(periods, api_key, mock=False, mode="global", goal="hipertrofia",
         prompt = build_monthly_prompt(periods, goal)
     elif mode == "weekly":
         prompt = build_weekly_prompt(
-            periods[0], current_week_data, prev_week_data, current_week_num, goal
+            periods[0], current_week_data, prev_week_data, current_week_num, goal,
+            prev_report=prev_report
         )
     else:
         prompt = build_global_prompt(periods, goal)
@@ -548,6 +509,4 @@ def analyze(periods, api_key, mock=False, mode="global", goal="hipertrofia",
     client = Groq(api_key=api_key)
     system = _make_system_prompt(goal)
     print(f"  Sending [{mode}] prompt to Groq...", flush=True)
-    # Global uses the compact format so it fits in 12k TPM — no special model needed
-    used_model = None
-    return _call_groq(client, system, prompt, model=used_model)
+    return _call_groq(client, system, prompt)

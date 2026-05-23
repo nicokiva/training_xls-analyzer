@@ -38,7 +38,7 @@ SMTP_PORT = 587  # Standard Gmail TLS port
 # Minimal CSS injected into every email so it looks decent in most clients.
 _EMAIL_CSS = """
 <style>
-  body  { font-family: Arial, sans-serif; font-size: 15px; color: #222; line-height: 1.6; max-width: 720px; margin: 0 auto; padding: 20px; }
+  body  { font-family: Arial, sans-serif; font-size: 15px; color: #222; line-height: 1.6; max-width: 760px; margin: 0 auto; padding: 20px; }
   h1    { font-size: 1.5em; border-bottom: 2px solid #ddd; padding-bottom: 6px; }
   h2    { font-size: 1.2em; margin-top: 1.4em; }
   h3    { font-size: 1.05em; }
@@ -46,6 +46,15 @@ _EMAIL_CSS = """
   code  { background: #f4f4f4; padding: 2px 5px; border-radius: 3px; font-size: 0.9em; }
   ul,ol { padding-left: 1.4em; }
   strong{ color: #111; }
+  /* Suggestion tables */
+  .sug-table          { border-collapse: collapse; width: 100%; margin: 8px 0 20px; font-size: 0.92em; }
+  .sug-table th       { background: #f0f4f8; text-align: center; padding: 6px 8px; border: 1px solid #ccc; white-space: nowrap; }
+  .sug-table td       { padding: 5px 8px; border: 1px solid #ddd; vertical-align: top; }
+  .sug-table td.name  { font-weight: bold; }
+  .sug-table td.comb  { font-weight: bold; color: #7a5c00; }
+  .sug-table td.num   { text-align: center; white-space: nowrap; }
+  .sug-table td.why   { font-size: 0.80em; color: #555; line-height: 1.4; }
+  .sug-table tr:nth-child(even) td { background: #fafafa; }
 </style>
 """
 

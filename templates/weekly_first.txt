@@ -1,12 +1,14 @@
-Weekly analysis of period {period}.
-User goal: {goal}.
+{prev_report}First week of period {period}. Week {week_num} is the only one with data so far.
+Nicolás's goal: {goal}.
 
-## Current week (first of the period)
+## Week 1 data
 
 {current_week}
 
-This is the first week of the period, there is no previous week to compare.
-Analyze:
-1. How did the period start in relation to the {goal} goal?
-2. Is there anything notable in the numbers of this first week?
-3. What do you recommend for next week?
+Write him a short personal opener as his trainer. This is the baseline week of a new routine — there's no previous week to compare against within this period.
+
+Cover:
+- How did week 1 land? Strong start, conservative, or just getting calibrated?
+- Compare to the end of the previous period where relevant — same muscle groups, even if the exercises are different. Did he carry over the strength he built?
+- Anything notable in the numbers worth calling out
+- What to focus on heading into week 2

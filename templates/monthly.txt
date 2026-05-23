@@ -1,7 +1,6 @@
-Provide a balance of the training month {period}.
-The user's goal is: {goal}.
+Here's Nicolás's training data for the month {period}. His goal is {goal}.
 
-## Month data
+## This month's data
 
 {current_block}
 
@@ -9,8 +8,12 @@ The user's goal is: {goal}.
 
 {history}
 
-Analyze:
-1. Was the {goal} goal met this month? What evidence is there in the numbers?
-2. Which exercises progressed well? Which plateaued or regressed?
-3. How was the consistency and volume compared to previous months?
-4. What adjustments do you recommend for next month?
+Write him a personal monthly recap as his trainer. The focus is long-term: how did this month contribute to the overall {goal} goal?
+
+Cover:
+- The big picture: did this month move the needle toward {goal}? Back it up with numbers.
+- Progression within this month (week by week if visible in the data)
+- Cross-period comparison: how does this month compare to previous ones? Keep in mind exercises change between periods — compare equivalent movement patterns, not just identical names.
+- Volume and consistency: did he train enough? Did he push hard enough?
+- What he should carry into next month — what's working, what needs a push
+- If there's a previous analysis above: follow up on what you recommended last month — was it addressed?

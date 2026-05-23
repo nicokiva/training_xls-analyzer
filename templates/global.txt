@@ -1,11 +1,14 @@
-Analyze the complete progression of the following exercises over time.
-Data is ordered chronologically (oldest → most recent).
+Here's Nicolás's full training history across all periods. Data is ordered chronologically (oldest → most recent).
 
-Generate a global analysis oriented toward the {goal} goal that includes:
-- General trend for each exercise (improvement, plateau, regression)
-- Exercises with the most and least progress
-- Evaluation of whether the history is on track to meet the {goal} goal
-- Plateau signals with concrete evidence
-- Concrete recommendations for the next cycles
+Write him a personal global progress report as his trainer. This is the big picture — not focused on any single month but on the full journey since he started tracking.
+
+Cover:
+- Overall trajectory: is he genuinely progressing toward the {goal} goal across all this time? What does the evidence say?
+- Which muscle groups or movement patterns show the clearest long-term progress, and which are stalling or inconsistent
+- Key turning points you notice in the history (big jumps, resets, plateaus)
+- How well the accumulated training is setting him up for the {goal} goal going forward
+- Your honest top-level take: what's working, what needs to change in the long run
+
+Keep in mind that exercises change between periods — compare across equivalent movement patterns (e.g. chest press variations, row variations) not just identical exercise names.
 
 {history}

@@ -33,10 +33,11 @@ from pathlib import Path       # Path is the modern way to handle file paths in 
 
 from dotenv import load_dotenv  # third-party: reads .env file into environment variables
 
-from helpers.reader import get_service, load_all_periods, get_latest_week_indices, extract_week_data, get_active_period, get_last_completed_period
+from helpers.reader import get_service, get_write_service, load_all_periods, get_latest_week_indices, extract_week_data, get_active_period, get_last_completed_period
 from helpers.ai import analyze, translate_to_spanish
 from helpers.mailer import send_analysis
 from helpers.events import consume_pending_events, mark_event_processed
+from helpers.writer import parse_suggestions, strip_suggestions_block, write_suggestions_to_sheet, format_suggestions_for_email
 from training_shared.events import EventType
 
 # load_dotenv() must be called before os.getenv() so the .env values are available.
@@ -151,10 +152,17 @@ def run_analysis(mode, args, service, periods, periods_override=None, return_onl
     else:
         change_data = periods
 
-    # Skip if data hasn't changed since last run (only for real runs, not mock).
-    if not args.mock and not has_changed(change_data, mode):
+    # Skip if data hasn't changed since last run (only for real runs, not mock or forced).
+    if not args.mock and not getattr(args, "force", False) and not has_changed(change_data, mode):
         print(f"[{mode}] No changes since last run. Skipping.")
         return False
+
+    # Load the previous report for this mode (if any) so the AI can follow up on it.
+    ANALYSES_DIR.mkdir(exist_ok=True)
+    prev_report = None
+    prev_files = sorted(ANALYSES_DIR.glob(f"analysis_{mode}_*.md"))
+    if prev_files:
+        prev_report = prev_files[-1].read_text(encoding="utf-8")
 
     # Build a periods list where index 0 is the target period, for prompt builders.
     periods_for_prompt = [target_period] + [p for p in periods if p is not target_period]
@@ -169,13 +177,35 @@ def run_analysis(mode, args, service, periods, periods_override=None, return_onl
         current_week_data=current_week_data,
         prev_week_data=prev_week_data,
         current_week_num=current_week_num,
+        prev_report=prev_report,
     )
 
-    if not args.mock:
-        print(f"[{mode}] Translating to Spanish...")
-        analysis = translate_to_spanish(analysis, args.api_key)
+    # The system prompt now instructs the AI to respond directly in Spanish,
+    # so no separate translation call is needed (and it would waste ~4k tokens).
 
-    ANALYSES_DIR.mkdir(exist_ok=True)
+    # For new-routine: extract JSON suggestions, write to sheet, enrich email body.
+    if mode == "new-routine" and not args.mock:
+        suggestions = parse_suggestions(analysis)
+        if suggestions:
+            # Find the active non-ORIG tab to write to (never touch ORIG backups).
+            import re as _re
+            active_tab = next(
+                (p["period"] for p in periods
+                 if _re.match(r"^\d{2}/\d{2}/\d{2}-\.\.\.$", p["period"])),
+                None
+            )
+            if active_tab:
+                print(f"[new-routine] Writing {len(suggestions)} weight suggestion(s) to '{active_tab}'...")
+                write_service = get_write_service(args.credentials)
+                write_suggestions_to_sheet(write_service, args.sheets_id, active_tab, suggestions)
+            else:
+                print("[new-routine] No active non-ORIG tab found — skipping sheet write.")
+            # Strip JSON block from email body and append formatted table instead
+            analysis = strip_suggestions_block(analysis)
+            analysis += format_suggestions_for_email(suggestions)
+        else:
+            print("[new-routine] No JSON suggestions block found in AI response.")
+
     for old_file in ANALYSES_DIR.glob(f"analysis_{mode}_*.md"):
         old_file.unlink()
 
@@ -218,6 +248,8 @@ def main():
         help="Training objective injected into all prompts (default: hypertrophy)")
     # store_true means the flag is a boolean: present = True, absent = False
     parser.add_argument("--mock",           action="store_true")
+    parser.add_argument("--force",          action="store_true",
+                        help="Skip the 'no changes' check and always run the analysis")
     parser.add_argument("--max-periods",    type=int, default=None)
     parser.add_argument("--target-period",  default=None,
                         help="Tab name to use as target period for monthly/new-routine, e.g. '20/04/26-15/05/26'")

@@ -1,16 +1,42 @@
-A new training routine has just been generated.
-The user's goal is: {goal}.
+Nicolás just received a new training routine assigned by his coach for period {period}. His goal is {goal}.
 
-## New routine ({period})
+## New routine structure
 
 {routine}
 
-## Previous training history
+## Full training history
 
 {history}
 
-Analyze:
-1. Is this routine suitable for the {goal} goal? Why?
-2. Are there exercises that don't contribute to the goal or could be improved?
-3. What concrete changes would you make to this routine given the user's history?
-4. Are there patterns from the history that this routine leverages well or ignores?
+Write two sections:
+
+### Análisis por día
+Write a personal analysis grouped by day as his trainer. The exercises and reps are set by the coach — don't question them. For each day, cover:
+- How the exercises in that day serve the {goal} goal
+- What's similar or different vs previous periods and what that means for him
+- Key things to focus on: execution, tempo, rest, based on his history
+
+### Pesos sugeridos
+After the analysis, output a JSON block with suggested starting weights for each exercise. Base suggestions on his full history. Reps are fixed — only suggest peso and rest time.
+
+The block MUST be valid JSON inside ```json ``` fences. Use this exact format:
+
+```json
+[
+  {{
+    "exercise": "Nombre exacto del ejercicio",
+    "day": 1,
+    "weeks": [70, 72.5, 75, 77.5],
+    "rest_s": 90,
+    "reason": "Una línea explicando por qué este peso, basado en su historial"
+  }}
+]
+```
+
+Rules:
+- "weeks" must have exactly 4 values (one per week), showing progressive overload.
+- For bodyweight exercises, use 0.
+- For combined exercises, suggest ~15-20% less than isolated equivalent.
+- If no history for an exercise, estimate from similar movements.
+- "reason" must reference actual numbers from his history.
+- **Combined exercises and rest:** when two or more exercises appear together as a combined set (superset), the rest time applies after the LAST exercise of the group, not between them. Set `rest_s` only on the last exercise of each combined group; set `rest_s: null` for all others in the same group.

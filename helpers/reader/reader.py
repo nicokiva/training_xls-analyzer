@@ -25,24 +25,25 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
 # Read-only permission — sufficient to read the spreadsheet
-SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
+SCOPES_READ  = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
+SCOPES_WRITE = ["https://www.googleapis.com/auth/spreadsheets"]
 
 N_WEEKS = 4    # weeks per period
 N_SERIES = 3   # sets per exercise per week
 
 
 def get_service(credentials_path):
-    """
-    Creates and returns the authenticated Google Sheets API client.
-
-    Args:
-        credentials_path: Path to the Google service account JSON file.
-
-    Returns:
-        Google Sheets API v4 Resource.
-    """
+    """Authenticated Google Sheets API client (read-only)."""
     creds = service_account.Credentials.from_service_account_file(
-        credentials_path, scopes=SCOPES
+        credentials_path, scopes=SCOPES_READ
+    )
+    return build("sheets", "v4", credentials=creds, cache_discovery=False)
+
+
+def get_write_service(credentials_path):
+    """Authenticated Google Sheets API client (read + write)."""
+    creds = service_account.Credentials.from_service_account_file(
+        credentials_path, scopes=SCOPES_WRITE
     )
     return build("sheets", "v4", credentials=creds, cache_discovery=False)
 
@@ -91,7 +92,45 @@ def read_tab(service, spreadsheet_id, tab_name):
     return result.get("values", [])
 
 
-def parse_tab(rows):
+def read_tab_notes(service, spreadsheet_id, tab_name):
+    """
+    Reads cell notes (not values) for a tab.
+
+    Uses spreadsheets().get() with a fields filter to fetch only notes,
+    avoiding the overhead of re-fetching all cell values.
+
+    Args:
+        service:        Google Sheets API Resource.
+        spreadsheet_id: ID of the spreadsheet.
+        tab_name:       Exact name of the tab to read.
+
+    Returns:
+        Dict mapping (row_index, col_index) → note text (str).
+        Only entries with non-empty notes are included.
+        Indices are 0-based and match the row indices from read_tab().
+    """
+    result = service.spreadsheets().get(
+        spreadsheetId=spreadsheet_id,
+        ranges=[f"'{tab_name}'"],
+        fields="sheets.data.rowData.values.note",
+    ).execute()
+
+    notes = {}
+    sheets = result.get("sheets", [])
+    if not sheets:
+        return notes
+    data = sheets[0].get("data", [])
+    if not data:
+        return notes
+    for row_idx, row in enumerate(data[0].get("rowData", [])):
+        for col_idx, cell in enumerate(row.get("values", [])):
+            note = cell.get("note", "").strip()
+            if note:
+                notes[(row_idx, col_idx)] = note
+    return notes
+
+
+def parse_tab(rows, notes=None):
     """
     Parses the raw rows from a tab and returns a structured list of days.
 
@@ -100,7 +139,9 @@ def parse_tab(rows):
     For each exercise extracts the reps and weights for 4 weeks × 3 sets.
 
     Args:
-        rows: List of raw rows (output of read_tab).
+        rows:  List of raw rows (output of read_tab).
+        notes: Optional dict {(row_idx, col_idx): note_text} from read_tab_notes().
+               Notes on column A of an exercise row are attached to that exercise.
 
     Returns:
         List of days with the following format:
@@ -110,6 +151,8 @@ def parse_tab(rows):
             "exercises": [
               {
                 "name": "Empuje de pecho con barra",
+                "is_comb": False,
+                "note": "bajar lento",   ← only present if the cell has a note
                 "weeks": [
                   {
                     "week": 1,
@@ -128,6 +171,8 @@ def parse_tab(rows):
           ... (days 2, 3, 4)
         ]
     """
+    if notes is None:
+        notes = {}
     days = []
     i = 0
 
