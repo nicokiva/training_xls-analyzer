@@ -291,44 +291,15 @@ def main():
             print(f"\nProcessing event: {event_type}")
 
             if event_type == EventType.ROUTINE_UPLOADED:
-                # Semantic event from pdf2xls-generator: a full upload cycle just completed.
-                # Run all 3 analyses and combine them into a single email.
-                last_completed = get_last_completed_period(periods)
-                active         = get_active_period(periods)
-
-                sections = []  # list of (section_title, analysis_text)
-
-                if last_completed:
-                    print(f"  Last completed period: {last_completed['period']}")
-                    result = run_analysis("monthly",     args, service, periods, periods_override=last_completed, return_only=True)
-                    if result:
-                        sections.append(("Balance mensual", result[1]))
-                    result = run_analysis("global",      args, service, periods, return_only=True)
-                    if result:
-                        sections.append(("Análisis global", result[1]))
-                else:
-                    print("  No completed period found — skipping monthly and global.")
+                # Semantic event from pdf2xls-generator: only run new-routine.
+                # monthly and global run on their own schedule, independent of uploads.
+                active = get_active_period(periods)
 
                 if active:
                     print(f"  Active period: {active['period']}")
-                    result = run_analysis("new-routine", args, service, periods, periods_override=active, return_only=True)
-                    if result:
-                        sections.append(("Nueva rutina", result[1]))
+                    run_analysis("new-routine", args, service, periods, periods_override=active)
                 else:
                     print("  No active period found — skipping new-routine.")
-
-                if sections:
-                    if not args.email_from or not args.email_password:
-                        print("Error: EMAIL_FROM and EMAIL_PASSWORD are required (set them in .env).")
-                        sys.exit(1)
-                    today = datetime.now().strftime("%d/%m/%Y")
-                    subject = f"Resumen de entrenamiento — {today}"
-                    combined_body = "\n\n---\n\n".join(
-                        f"# {title}\n\n{body}" for title, body in sections
-                    )
-                    print(f"\nSending combined email ({len(sections)} section(s)) to {args.email_to}...")
-                    send_analysis(args.email_from, args.email_password, args.email_to, subject, combined_body)
-                    print("Combined email sent.")
 
             else:
                 # Manual run:* events (triggered via CLI or for testing)
