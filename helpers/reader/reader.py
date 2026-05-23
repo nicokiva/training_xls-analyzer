@@ -342,3 +342,46 @@ def get_last_completed_period(periods):
         if not is_active_period(p):
             return p
     return None
+
+
+def get_all_open_periods(periods):
+    """
+    Returns all periods whose tab name ends with '-...' (still running), ordered
+    as they appear in the spreadsheet (most recent first, same as periods list).
+
+    Normally there is exactly one open period. When a new routine is uploaded before
+    the old one is closed, there are temporarily two. The second-to-last (anteúltimo)
+    is the one that just finished and should be closed after running monthly/global.
+    """
+    return [p for p in periods if is_active_period(p)]
+
+
+def rename_tab(write_service, spreadsheet_id, old_name, new_name):
+    """
+    Renames a tab in the spreadsheet (requires write scope).
+    Used to close a completed period by replacing '-...' with an end date.
+
+    Args:
+        write_service:  Google Sheets API client with write scope.
+        old_name:       Current tab title, e.g. '18/05/26-...'
+        new_name:       New tab title,     e.g. '18/05/26-23/05/26'
+    """
+    meta = write_service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+    sheet_id = None
+    for s in meta["sheets"]:
+        if s["properties"]["title"] == old_name:
+            sheet_id = s["properties"]["sheetId"]
+            break
+    if sheet_id is None:
+        raise ValueError(f"Tab '{old_name}' not found in spreadsheet.")
+
+    write_service.spreadsheets().batchUpdate(
+        spreadsheetId=spreadsheet_id,
+        body={"requests": [{
+            "updateSheetProperties": {
+                "properties": {"sheetId": sheet_id, "title": new_name},
+                "fields": "title",
+            }
+        }]},
+    ).execute()
+    print(f"  Renamed tab: '{old_name}' → '{new_name}'")
