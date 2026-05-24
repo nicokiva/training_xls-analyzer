@@ -171,7 +171,7 @@ def try_close_completed_periods(args, service, periods):
     print(f"[close] Period closed: '{closed_name}'")
 
 
-
+def run_analysis(mode, args, service, periods, periods_override=None, return_only=False):
     """
     Runs one analysis mode end-to-end: build prompt → call AI → translate → save → email.
 

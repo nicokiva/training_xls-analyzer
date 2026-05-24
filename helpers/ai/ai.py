@@ -280,10 +280,10 @@ def build_new_routine_prompt(periods, goal):
 
 def build_monthly_prompt(periods, goal):
     current_period = periods[0]
-    history        = periods[1:4]
+    history        = periods[1:3]   # 2 previous periods is enough context
 
-    current_block = _format_exercise_history([current_period])
-    history_block = _format_exercise_history(history) if history else "(sin historial previo)"
+    current_block = _format_exercise_history_compact([current_period])
+    history_block = _format_exercise_history_compact(history) if history else "(sin historial previo)"
 
     result = _load_template("monthly", goal=goal, period=current_period["period"],
                             current_block=current_block, history=history_block)
