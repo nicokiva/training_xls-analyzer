@@ -24,6 +24,7 @@ Template system:
 
 from pathlib import Path
 import time
+from datetime import datetime
 
 from groq import Groq
 
@@ -55,6 +56,8 @@ How to interpret the data:
 - Each "day" (Day 1, Day 2, etc.) is a fixed training session that repeats every week. Day 1 of Week 1 and Day 1 of Week 2 are the same session done 7 days apart. The weeks show how performance on that same session evolves over the month.
 - Exercises marked as *(combinado)* or (combinado) are done back-to-back as a superset with minimal rest. Their weights are intentionally lower — do NOT read this as regression. There can be multiple independent combined groups in the same day.
 - Cell notes (marked as "Note:") are observations or instructions from the coach — take them into account in the analysis.
+- When comparing weights across periods, data is always ordered oldest → most recent. More weight in a more recent period = progress. Less weight in a more recent period = regression. Never describe a decrease in weight as an improvement.
+- The weight shown per period is the **settled weight** (last week's average), not the peak. Week 1 is often a discovery week where Nicolás tries a weight and may overshoot — subsequent weeks settle to what's actually sustainable. Always base suggestions on the settled weight, never on a single high outlier week.
 
 Nicolás's goal: {goal}."""
 
@@ -94,8 +97,28 @@ def _call_groq(client, system_prompt, user_prompt, max_tokens=4096, model=None):
     Makes a call to the Groq model and returns the response text.
     Retries once after 65 seconds if the per-minute rate limit (TPM/413) is hit.
     If the daily limit (TPD/429) is hit, raises immediately with a clear message.
+    Logs every request and response to logs/groq_YYYYMMDD.log.
     """
     used_model = model or MODEL
+
+    # ── Logging ──────────────────────────────────────────────────────────────
+    log_dir = Path(__file__).parent.parent.parent / "logs"
+    log_dir.mkdir(exist_ok=True)
+    log_path = log_dir / f"groq_{datetime.now().strftime('%Y%m%d')}.log"
+
+    def _log(text):
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(text + "\n")
+
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    _log(f"\n{'='*80}")
+    _log(f"[{timestamp}] MODEL: {used_model}")
+    _log(f"--- SYSTEM PROMPT ({len(system_prompt)} chars) ---")
+    _log(system_prompt)
+    _log(f"--- USER PROMPT ({len(user_prompt)} chars) ---")
+    _log(user_prompt)
+    # ─────────────────────────────────────────────────────────────────────────
+
     for attempt in range(2):
         try:
             response = client.chat.completions.create(
@@ -106,9 +129,13 @@ def _call_groq(client, system_prompt, user_prompt, max_tokens=4096, model=None):
                 ],
                 max_tokens=max_tokens,
             )
-            return response.choices[0].message.content
+            result = response.choices[0].message.content
+            _log(f"--- RESPONSE ({len(result)} chars) ---")
+            _log(result)
+            return result
         except Exception as e:
             err = str(e)
+            _log(f"--- ERROR (attempt {attempt+1}) ---\n{err}")
             if "413" in err and attempt == 0:
                 print("  Rate limit hit (TPM) — waiting 65s for window to reset...")
                 time.sleep(65)
@@ -125,15 +152,48 @@ def _call_groq(client, system_prompt, user_prompt, max_tokens=4096, model=None):
 # Prompt builders
 # ---------------------------------------------------------------------------
 
+def _last_settled_peso(ex):
+    """
+    Returns the average peso from the LAST week that has data for an exercise.
+
+    Why last week and not peak?
+    The first week of a period is often a 'discovery' week where Nicolás tries a
+    weight and may find it too heavy, then drops in subsequent weeks. Using peak
+    would pick up that overshot week and lead to suggestions that are too heavy.
+    Using the last settled week captures what he was actually able to sustain.
+
+    If the period showed genuine progression (e.g. 37.5 → 40 → 42.5 → 45),
+    the last week still gives the right baseline (45 kg — what he achieved).
+    """
+    last_pesos = None
+    for w in ex["weeks"]:
+        # Collect all numeric peso values for this week
+        pesos = []
+        for s in w["series"]:
+            try:
+                val = float(s["peso"])
+                if val > 0:
+                    pesos.append(val)
+            except (TypeError, ValueError):
+                pass
+        if pesos:
+            # Keep overwriting so we end up with the LAST week that has data
+            last_pesos = pesos
+    if last_pesos is None:
+        return None
+    return sum(last_pesos) / len(last_pesos)
+
+
 def _format_exercise_history_compact(periods):
     """
-    Compact format for global analysis: one line per exercise showing peak weight
-    per period (oldest → newest). Combined exercises are labelled with (combinado)
-    so the AI doesn't mistake their naturally lower weights for regression.
+    Compact format: one line per exercise showing the settled weight per period
+    (oldest → newest). Uses the last week's average — not the peak — so that
+    'discovery' week overshoots don't inflate the baseline for the next period.
+    Combined exercises are labelled with (combinado).
     """
     ordered = list(reversed(periods))
-    exercise_peaks  = {}   # name → list of "period:peak"
-    exercise_is_comb = {}  # name → bool
+    exercise_entries = {}   # name → list of "period:Xkg"
+    exercise_is_comb = {}   # name → bool
 
     for period_data in ordered:
         period = period_data["period"]
@@ -142,21 +202,14 @@ def _format_exercise_history_compact(periods):
                 name = ex["name"]
                 if ex.get("is_comb"):
                     exercise_is_comb[name] = True
-                weights = []
-                for w in ex["weeks"]:
-                    for s in w["series"]:
-                        try:
-                            weights.append(float(s["peso"]))
-                        except (TypeError, ValueError):
-                            pass
-                if weights:
-                    peak = max(weights)
-                    if name not in exercise_peaks:
-                        exercise_peaks[name] = []
-                    exercise_peaks[name].append(f"{period[:5]}:{peak:.0f}kg")
+                settled = _last_settled_peso(ex)
+                if settled is not None:
+                    if name not in exercise_entries:
+                        exercise_entries[name] = []
+                    exercise_entries[name].append(f"{period[:5]}:{settled:.1f}kg")
 
     lines = []
-    for name, entries in exercise_peaks.items():
+    for name, entries in exercise_entries.items():
         label = f"**{name}**" + (" *(combinado)*" if exercise_is_comb.get(name) else "")
         lines.append(f"{label}: {' | '.join(entries)}")
     return "\n".join(lines)
@@ -246,10 +299,15 @@ def _format_prev_report(prev_report):
     """Returns a formatted block with the previous report, or empty string if None."""
     if not prev_report:
         return ""
-    return f"\n\n## Tu análisis anterior\n\n{prev_report}\n\n---\n"
+    return f"\n\n## Your previous analysis\n\n{prev_report}\n\n---\n"
 
 
 def build_global_prompt(periods, goal):
+    """
+    Full-history prompt. Includes all periods condensed into a compact block.
+    Template file (global.txt) is preferred; the hardcoded fallback is used only
+    if the template is missing or fails to render.
+    """
     history_block = _format_exercise_history_compact(periods)
     result = _load_template("global", goal=goal, history=history_block)
     if result:
@@ -262,38 +320,50 @@ def build_global_prompt(periods, goal):
 
 
 def build_new_routine_prompt(periods, goal):
+    """
+    New-routine prompt. periods[0] is the freshly-uploaded routine (no real data yet —
+    only the structure is used). periods[1:] is the historical context.
+
+    Also asks the AI to embed a ```json block with weight/rest suggestions so
+    write_suggestions_to_sheet() can parse and apply them directly to the sheet.
+    """
     new_period    = periods[0]
     routine_block = _format_routine_structure(new_period)
-    history_block = _format_exercise_history_compact(periods[1:]) if len(periods) > 1 else "(sin historial previo)"
+    history_block = _format_exercise_history_compact(periods[1:]) if len(periods) > 1 else "(no prior history)"
 
     result = _load_template("new-routine", goal=goal, period=new_period["period"],
                             routine=routine_block, history=history_block)
     if result:
         return result
     return (
-        f"Nueva rutina generada para el período {new_period['period']}.\n"
-        f"Objetivo: **{goal}**.\n\n"
-        f"## Estructura de la nueva rutina\n\n{routine_block}\n"
-        f"## Historial previo\n\n{history_block}\n"
+        f"New routine generated for period {new_period['period']}.\n"
+        f"Goal: **{goal}**.\n\n"
+        f"## New routine structure\n\n{routine_block}\n"
+        f"## Prior history\n\n{history_block}\n"
     )
 
 
 def build_monthly_prompt(periods, goal):
+    """
+    Monthly balance prompt. Uses the most recent completed period (periods[0])
+    plus up to 2 prior periods for context. Limiting to 2 keeps the prompt
+    within the free-tier TPM budget.
+    """
     current_period = periods[0]
     history        = periods[1:3]   # 2 previous periods is enough context
 
     current_block = _format_exercise_history_compact([current_period])
-    history_block = _format_exercise_history_compact(history) if history else "(sin historial previo)"
+    history_block = _format_exercise_history_compact(history) if history else "(no prior history)"
 
     result = _load_template("monthly", goal=goal, period=current_period["period"],
                             current_block=current_block, history=history_block)
     if result:
         return result
     return (
-        f"Balance del mes **{current_period['period']}**.\n"
-        f"Objetivo: **{goal}**.\n\n"
-        f"## Datos del mes\n\n{current_block}\n"
-        f"## Historial previo\n\n{history_block}\n"
+        f"Monthly balance **{current_period['period']}**.\n"
+        f"Goal: **{goal}**.\n\n"
+        f"## This month's data\n\n{current_block}\n"
+        f"## Prior history\n\n{history_block}\n"
     )
 
 

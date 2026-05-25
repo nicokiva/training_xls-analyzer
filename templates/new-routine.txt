@@ -10,11 +10,14 @@ Nicolás just received a new training routine assigned by his coach for period {
 
 Write two sections:
 
-### Análisis por día
-Write a personal analysis grouped by day as his trainer. The exercises and reps are set by the coach — don't question them. For each day, cover:
-- How the exercises in that day serve the {goal} goal
-- What's similar or different vs previous periods and what that means for him
-- Key things to focus on: execution, tempo, rest, based on his history
+### Novedades por día
+Write a **brief, actionable** summary grouped by day. Be direct and specific — no generic advice.
+For each day, write **2–4 bullet points max**. Only mention things that actually matter based on his history:
+- **Changes vs last period**: exercises added, removed, or with significantly different rep schemes. Skip if nothing changed.
+- **Weight flags**: any exercise where the suggested jump is ≥15% above his last recorded weight, or where history is missing.
+- **One concrete execution cue** per day at most — only if his history shows a specific pattern worth noting (e.g. stalling on a movement, last set drop-offs).
+
+Do NOT: describe what muscle group an exercise works, give generic technique reminders, repeat information already visible in the weights table, or pad with filler sentences.
 
 ### Pesos sugeridos
 After the analysis, output a JSON block with suggested starting weights for each exercise. Base suggestions on his full history. Reps are fixed — only suggest peso and rest time.
@@ -34,9 +37,11 @@ The block MUST be valid JSON inside ```json ``` fences. Use this exact format:
 ```
 
 Rules:
+- **Include EVERY exercise** in the JSON — no exceptions. If the routine has 9 exercises in a day, the JSON must have 9 entries for that day. Never truncate or summarize.
 - "weeks" must have exactly 4 values (one per week), showing progressive overload.
 - For bodyweight exercises, use 0.
 - For combined exercises, suggest ~15-20% less than isolated equivalent.
 - If no history for an exercise, estimate from similar movements.
-- "reason" must reference actual numbers from his history.
+- "reason" must reference the **settled weight** from his history (last week of the period, not the peak). If week 1 was higher than subsequent weeks, explicitly acknowledge the drop and base the suggestion on what he sustained.
 - **Combined exercises and rest:** when two or more exercises appear together as a combined set (superset), the rest time applies after the LAST exercise of the group, not between them. Set `rest_s` only on the last exercise of each combined group; set `rest_s: null` for all others in the same group.
+- **Include the abdomen group in every day.** The abdomen (Abdominal recto largo, Rotaciones de pie con disco, Extensión de cadera en banco) appears as a combined group at the start of every training day. You MUST include all three in the JSON for every day, with `rest_s` only on Extensión de cadera en banco (the last of the group).
