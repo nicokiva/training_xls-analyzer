@@ -45,8 +45,8 @@ from pathlib import Path       # Path is the modern way to handle file paths in 
 
 from dotenv import load_dotenv  # third-party: reads .env file into environment variables
 
-from helpers.reader import get_service, get_write_service, load_all_periods, get_latest_week_indices, extract_week_data, get_active_period, get_last_completed_period, get_all_open_periods, rename_tab
-from helpers.ai import analyze, translate_to_spanish
+from helpers.reader import get_service, get_write_service, load_all_periods, get_latest_week_indices, extract_week_data, get_active_period, get_last_completed_period, get_all_open_periods, rename_tab, is_active_period
+from helpers.ai import analyze
 from helpers.mailer import send_analysis
 from helpers.events import consume_pending_events, mark_event_processed
 from helpers.writer import parse_suggestions, strip_suggestions_block, write_suggestions_to_sheet, format_suggestions_for_email
@@ -192,8 +192,16 @@ def run_analysis(mode, args, service, periods, periods_override=None, return_onl
     """
     today = datetime.now().strftime("%d/%m/%Y")
 
-    # For monthly and new-routine, allow the caller to specify which period to use.
-    # For global and weekly, periods[0] is always the right starting point.
+    # ── Period selection ───────────────────────────────────────────────────────
+    # monthly: analyze the last COMPLETED period — the active tab only has
+    #          AI suggestions, not real training data.
+    if mode == "monthly" and periods_override is None:
+        periods_override = get_last_completed_period(periods)
+        if periods_override is None:
+            print(f"[monthly] No completed period found. Skipping.")
+            return False
+
+    # For weekly/new-routine: use override if given, else periods[0] (active).
     target_period = periods_override if periods_override is not None else periods[0]
 
     current_week_data = None
@@ -230,8 +238,13 @@ def run_analysis(mode, args, service, periods, periods_override=None, return_onl
     if prev_files:
         prev_report = prev_files[-1].read_text(encoding="utf-8")
 
-    # Build a periods list where index 0 is the target period, for prompt builders.
-    periods_for_prompt = [target_period] + [p for p in periods if p is not target_period]
+    # ── Build periods list for the prompt ──────────────────────────────────────
+    # global: only completed periods — the active tab has no real data yet
+    #         (only AI suggestions written in italic).
+    if mode == "global":
+        periods_for_prompt = [p for p in periods if not is_active_period(p)]
+    else:
+        periods_for_prompt = [target_period] + [p for p in periods if p is not target_period]
 
     print(f"[{mode}] Analyzing with Groq...")
     analysis = analyze(

@@ -10,14 +10,27 @@ Nicolás just received a new training routine assigned by his coach for period {
 
 Write two sections:
 
-### Novedades por día
-Write a **brief, actionable** summary grouped by day. Be direct and specific — no generic advice.
-For each day, write **2–4 bullet points max**. Only mention things that actually matter based on his history:
-- **Changes vs last period**: exercises added, removed, or with significantly different rep schemes. Skip if nothing changed.
-- **Weight flags**: any exercise where the suggested jump is ≥15% above his last recorded weight, or where history is missing.
-- **One concrete execution cue** per day at most — only if his history shows a specific pattern worth noting (e.g. stalling on a movement, last set drop-offs).
+### Cómo usar esta rutina para crecer
+Give Nicolás a concrete, actionable guide for executing this specific routine to maximize hypertrophy and muscle size. Base recommendations on his actual history (settled weights, drop sets he used, rep ranges he handled). Write in Spanish. Be direct and specific — no generic advice.
 
-Do NOT: describe what muscle group an exercise works, give generic technique reminders, repeat information already visible in the weights table, or pad with filler sentences.
+Structure it as follows:
+
+**1. Lógica de la progresión de pesos**
+Explain how he should use the 4 weeks: when to increase weight, by how much (typical jumps based on his history), and what signals to look for (e.g. if he completes all reps with margin → add weight next week). Reference his actual progression patterns from history.
+
+**2. Tiempos de descanso por tipo de ejercicio**
+Give specific rest times for each exercise category in this routine (compound press/pull, isolation, legs, combined/superset). Explain the rationale: shorter rest increases metabolic stress, longer rest allows heavier loads — what's the tradeoff for his goal.
+
+**3. Cómo llegar al fallo (o cerca)**
+For hypertrophy, the last set of each exercise should be close to failure. Based on his history, identify which exercises he already pushes to failure (drop sets visible in history) and which he could push harder. Give specific guidance per exercise group.
+
+**4. Drop sets y técnicas que ya usa**
+He already uses drop sets on some exercises (e.g. triceps, hammer). Identify all exercises where his history shows drop sets or weight reductions, and confirm whether to keep them, extend them, or simplify them for this period.
+
+**5. Volumen y frecuencia: ¿es suficiente para crecer?**
+Count sets per muscle group per week. Compare against hypertrophy evidence (10–20 sets/muscle/week). If any muscle is undertrained, say so explicitly and suggest a concrete fix (e.g. "agregar una serie extra de X"). If it's adequate, confirm it briefly.
+
+Do NOT: repeat information visible in the weights table, give generic advice like "comé proteína" or "dormí bien", or pad with unnecessary positives.
 
 ### Pesos sugeridos
 After the analysis, output a JSON block with suggested starting weights for each exercise. Base suggestions on his full history. Reps are fixed — only suggest peso and rest time.
@@ -45,3 +58,33 @@ Rules:
 - "reason" must reference the **settled weight** from his history (last week of the period, not the peak). If week 1 was higher than subsequent weeks, explicitly acknowledge the drop and base the suggestion on what he sustained.
 - **Combined exercises and rest:** when two or more exercises appear together as a combined set (superset), the rest time applies after the LAST exercise of the group, not between them. Set `rest_s` only on the last exercise of each combined group; set `rest_s: null` for all others in the same group.
 - **Include the abdomen group in every day.** The abdomen (Abdominal recto largo, Rotaciones de pie con disco, Extensión de cadera en banco) appears as a combined group at the start of every training day. You MUST include all three in the JSON for every day, with `rest_s` only on Extensión de cadera en banco (the last of the group).
+- **Abdomen weights are identical across all 4 days.** Since the abdomen group repeats the same exercises every day, the "weeks" array must be exactly the same for each exercise regardless of which day it appears in. Do NOT vary abdomen weights between days.
+
+
+### Pesos sugeridos
+After the analysis, output a JSON block with suggested starting weights for each exercise. Base suggestions on his full history. Reps are fixed — only suggest peso and rest time.
+
+The block MUST be valid JSON inside ```json ``` fences. Use this exact format:
+
+```json
+[
+  {{
+    "exercise": "Nombre exacto del ejercicio",
+    "day": 1,
+    "weeks": [70, 72.5, 75, 77.5],
+    "rest_s": 90,
+    "reason": "Una línea explicando por qué este peso, basado en su historial"
+  }}
+]
+```
+
+Rules:
+- **Include EVERY exercise** in the JSON — no exceptions. If the routine has 9 exercises in a day, the JSON must have 9 entries for that day. Never truncate or summarize.
+- "weeks" must have exactly 4 values (one per week), showing progressive overload.
+- For bodyweight exercises, use 0.
+- For combined exercises, suggest ~15-20% less than isolated equivalent.
+- If no history for an exercise, estimate from similar movements.
+- "reason" must reference the **settled weight** from his history (last week of the period, not the peak). If week 1 was higher than subsequent weeks, explicitly acknowledge the drop and base the suggestion on what he sustained.
+- **Combined exercises and rest:** when two or more exercises appear together as a combined set (superset), the rest time applies after the LAST exercise of the group, not between them. Set `rest_s` only on the last exercise of each combined group; set `rest_s: null` for all others in the same group.
+- **Include the abdomen group in every day.** The abdomen (Abdominal recto largo, Rotaciones de pie con disco, Extensión de cadera en banco) appears as a combined group at the start of every training day. You MUST include all three in the JSON for every day, with `rest_s` only on Extensión de cadera en banco (the last of the group).
+- **Abdomen weights are identical across all 4 days.** Since the abdomen group repeats the same exercises every day, the "weeks" array must be exactly the same for each exercise regardless of which day it appears in. Do NOT vary abdomen weights between days.

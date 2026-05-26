@@ -17,3 +17,5 @@ Cover:
 - Volume and consistency: did he train enough? Did he push hard enough?
 - What he should carry into next month — what's working, what needs a push
 - If there's a previous analysis above: follow up on what you recommended last month — was it addressed?
+
+Important: whenever you mention an exercise that is marked *(combinado)*, always note in parentheses that it is part of a combined group (superset/triserie). Weights in combined exercises are intentionally lower and should not be compared directly to standalone sets.

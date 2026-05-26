@@ -119,51 +119,73 @@ def write_suggestions_to_sheet(service, spreadsheet_id, tab_name, suggestions):
     )
     rows = result.get("values", [])
 
-    # Build name → (row_index, row) map (col A, skip header/day rows)
+    # Build (day, name) → (row_index, row) map (col A, skip header/day rows)
+    # Keyed by day so exercises that repeat across days (e.g. the abdomen group)
+    # map to the correct row for each day, not just the last occurrence.
     # Also record which rows are combined ("[C] " prefix) so we can detect
     # the last exercise in each combined group for the Pausa column.
-    name_to_row = {}
-    row_is_comb  = {}   # row_idx → bool
+    name_to_row = {}   # (day, norm_name) → (row_idx, row)
+    row_is_comb  = {}  # row_idx → bool
+    current_day  = 0
     for row_idx, row in enumerate(rows):
         if not row or not row[0]:
             continue
         cell = row[0].strip()
-        if cell.lower().startswith("dia") or cell.lower() in ("rep.", "peso"):
+        if cell.lower().startswith("dia"):
+            try:
+                current_day = int(cell.split()[1])
+            except (IndexError, ValueError):
+                pass
+            continue
+        if cell.lower() in ("rep.", "peso"):
             continue
         is_comb = cell.startswith("[C] ")
         clean   = cell[4:] if is_comb else cell
-        name_to_row[_normalize(clean)] = (row_idx, row)
+        name_to_row[(current_day, _normalize(clean))] = (row_idx, row)
         row_is_comb[row_idx] = is_comb
 
-    # Build a set of row indices that are the LAST in their combined group.
-    # A combined row is the last in its group when the next exercise row is NOT combined.
-    exercise_row_indices = sorted(name_to_row[k][0] for k in name_to_row)
+    # Build a set of row indices that are the LAST in their combined group,
+    # and a map from any combined row to the FIRST row of its group.
+    #
+    # Why track the first row?  The sheet merges the Pausa (col Z) cells for
+    # the entire combined group (e.g. Z4:Z6 for 3 abdomen rows).  Google Sheets
+    # silently ignores writes to any cell inside a merge that isn't the top-left
+    # cell, so we must always write the Pausa value to the FIRST row of the group.
+    exercise_row_indices = sorted(v[0] for v in name_to_row.values())
     last_of_comb_group   = set()
+    comb_group_first     = {}   # row_idx → first row_idx of its combined group
+    current_group_start  = None
     for i, ridx in enumerate(exercise_row_indices):
-        if not row_is_comb.get(ridx):
-            continue
-        next_ridx = exercise_row_indices[i + 1] if i + 1 < len(exercise_row_indices) else None
-        if next_ridx is None or not row_is_comb.get(next_ridx):
-            last_of_comb_group.add(ridx)
+        if row_is_comb.get(ridx):
+            if current_group_start is None:
+                current_group_start = ridx
+            comb_group_first[ridx] = current_group_start
+            next_ridx = exercise_row_indices[i + 1] if i + 1 < len(exercise_row_indices) else None
+            if next_ridx is None or not row_is_comb.get(next_ridx):
+                last_of_comb_group.add(ridx)
+                current_group_start = None
+        else:
+            current_group_start = None
 
     value_updates = []   # for values().batchUpdate()
     format_requests = [] # for spreadsheets().batchUpdate()
 
     for suggestion in suggestions:
         ex_name = suggestion.get("exercise", "")
+        day     = suggestion.get("day", 0)
         weeks   = suggestion.get("weeks", [])
         rest_s  = suggestion.get("rest_s")
         norm    = _normalize(ex_name)
 
-        # Fuzzy match: exact first, then substring
-        match = name_to_row.get(norm)
+        # Exact match by (day, name) first, then fuzzy within same day
+        match = name_to_row.get((day, norm))
         if match is None:
-            for key, val in name_to_row.items():
-                if norm in key or key in norm:
+            for (d, key), val in name_to_row.items():
+                if d == day and (norm in key or key in norm):
                     match = val
                     break
         if match is None:
-            print(f"  [writer] Exercise not found in sheet: '{ex_name}'")
+            print(f"  [writer] Exercise not found in sheet: day={day} '{ex_name}'")
             continue
 
         row_idx, row = match
@@ -199,24 +221,28 @@ def write_suggestions_to_sheet(service, spreadsheet_id, tab_name, suggestions):
                 })
 
         # ── Pausa (col Z) ────────────────────────────────────────────────────
-        # For individual exercises: always write rest_s here.
-        # For combined groups: only write on the LAST exercise of the group
-        #   (the AI is told to send rest_s=null for non-last combined exercises,
-        #   but we also guard here in case the AI doesn't comply).
+        # For individual exercises: write rest_s to their own row.
+        # For combined groups: only fire once (on the LAST exercise, which is when
+        #   the AI sends a non-null rest_s), but write to the FIRST row of the group.
+        #   The sheet merges col Z across all combined rows; Google Sheets silently
+        #   discards writes to any cell inside a merge that isn't the top-left cell.
         if rest_s is not None:
             is_comb = row_is_comb.get(row_idx, False)
             should_write = (not is_comb) or (row_idx in last_of_comb_group)
             if should_write:
-                existing_z = row[PAUSA_COL].strip() if PAUSA_COL < len(row) else ""
+                # For combined groups, write to the first (top-left) row of the merge.
+                pausa_row = comb_group_first.get(row_idx, row_idx) if is_comb else row_idx
+                pausa_src_row = rows[pausa_row] if pausa_row < len(rows) else []
+                existing_z = pausa_src_row[PAUSA_COL].strip() if PAUSA_COL < len(pausa_src_row) else ""
                 if not existing_z:
-                    cell_z = f"'{tab_name}'!{_col_letter(PAUSA_COL)}{row_idx + 1}"
+                    cell_z = f"'{tab_name}'!{_col_letter(PAUSA_COL)}{pausa_row + 1}"
                     value_updates.append({"range": cell_z, "values": [[f"{rest_s}s"]]})
                     format_requests.append({
                         "repeatCell": {
                             "range": {
                                 "sheetId": sheet_id,
-                                "startRowIndex": row_idx,
-                                "endRowIndex": row_idx + 1,
+                                "startRowIndex": pausa_row,
+                                "endRowIndex": pausa_row + 1,
                                 "startColumnIndex": PAUSA_COL,
                                 "endColumnIndex": PAUSA_COL + 1,
                             },

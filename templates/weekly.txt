@@ -1,6 +1,10 @@
 {prev_report}Weekly check-in for period {period}. Week {week_num} is the last one with data — do NOT mention missing weeks or assume more are expected.
 Nicolás's goal: {goal}.
 
+## Training history (prior periods — settled weights only)
+
+{history}
+
 ## Previous week
 
 {prev_week}

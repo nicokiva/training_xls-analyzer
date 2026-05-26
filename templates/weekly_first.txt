@@ -1,6 +1,10 @@
 {prev_report}First week of period {period}. Week {week_num} is the only one with data so far.
 Nicolás's goal: {goal}.
 
+## Training history (prior periods — settled weights only)
+
+{history}
+
 ## Week 1 data
 
 {current_week}
@@ -9,6 +13,6 @@ Write him a short personal opener as his trainer. This is the baseline week of a
 
 Cover:
 - How did week 1 land? Strong start, conservative, or just getting calibrated?
-- Compare to the end of the previous period where relevant — same muscle groups, even if the exercises are different. Did he carry over the strength he built?
+- Compare to the end of the previous period where relevant — same muscle groups, even if the exercises are different. Did he carry over the strength he built? Use the actual numbers from the history above, not from the previous analysis text.
 - Anything notable in the numbers worth calling out
 - What to focus on heading into week 2

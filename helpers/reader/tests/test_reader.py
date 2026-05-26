@@ -175,6 +175,42 @@ class TestGetLatestWeekIndices:
         period = _make_period("test", [])
         assert get_latest_week_indices(period) == (None, None)
 
+    def test_ongoing_week_is_skipped(self):
+        # W1 complete (both days have data), W2 only day 1 has data → ongoing.
+        # Should return W1 as current, not W2.
+        period = _make_period("test", [
+            {"day": 1, "exercises": [
+                _make_exercise("X", [
+                    _make_week(1, [("10", "60"), ("8", "60"), ("8", "60")]),
+                    _make_week(2, [("9", "62"), ("9", "62"), ("9", "62")]),
+                ])
+            ]},
+            {"day": 2, "exercises": [
+                _make_exercise("Y", [
+                    _make_week(1, [("10", "50"), ("8", "50"), ("8", "50")]),
+                    _make_week(2, [("",   ""),   ("",  ""),   ("",  "")]),
+                ])
+            ]},
+        ])
+        assert get_latest_week_indices(period) == (0, None)
+
+    def test_both_weeks_complete_with_multiple_days(self):
+        period = _make_period("test", [
+            {"day": 1, "exercises": [
+                _make_exercise("X", [
+                    _make_week(1, [("10", "60")]),
+                    _make_week(2, [("9",  "62")]),
+                ])
+            ]},
+            {"day": 2, "exercises": [
+                _make_exercise("Y", [
+                    _make_week(1, [("10", "50")]),
+                    _make_week(2, [("9",  "52")]),
+                ])
+            ]},
+        ])
+        assert get_latest_week_indices(period) == (1, 0)
+
 
 # ---------------------------------------------------------------------------
 # extract_week_data

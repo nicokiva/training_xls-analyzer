@@ -130,7 +130,76 @@ def read_tab_notes(service, spreadsheet_id, tab_name):
     return notes
 
 
-def parse_tab(rows, notes=None):
+def read_tab_italic_cells(service, spreadsheet_id, tab_name):
+    """
+    Returns a set of (row_idx, col_idx) for cells that have italic formatting.
+
+    Used to detect AI-suggested peso values written by the writer module.
+    Suggested cells are formatted in italic and should be treated as empty
+    (not real training data) when building AI prompts.
+
+    Indices are 0-based and match those from read_tab().
+    """
+    result = service.spreadsheets().get(
+        spreadsheetId=spreadsheet_id,
+        ranges=[f"'{tab_name}'"],
+        fields="sheets.data.rowData.values.userEnteredFormat.textFormat.italic",
+    ).execute()
+
+    italic = set()
+    sheets = result.get("sheets", [])
+    if not sheets:
+        return italic
+    data = sheets[0].get("data", [])
+    if not data:
+        return italic
+    for row_idx, row in enumerate(data[0].get("rowData", [])):
+        for col_idx, cell in enumerate(row.get("values", [])):
+            fmt = cell.get("userEnteredFormat", {})
+            if fmt.get("textFormat", {}).get("italic"):
+                italic.add((row_idx, col_idx))
+    return italic
+
+
+def read_tab_metadata(service, spreadsheet_id, tab_name):
+    """
+    Fetches notes AND italic formatting for a tab in a single API call.
+
+    Combining both into one request halves the number of API calls per tab,
+    avoiding Sheets API read quota limits (60 reads/min/user) when loading
+    many tabs at once.
+
+    Returns:
+        Tuple (notes, italic_cells) where:
+          notes:        Dict mapping (row_idx, col_idx) → note text (str).
+          italic_cells: Set of (row_idx, col_idx) for italic-formatted cells.
+    """
+    result = service.spreadsheets().get(
+        spreadsheetId=spreadsheet_id,
+        ranges=[f"'{tab_name}'"],
+        fields="sheets.data.rowData.values(note,userEnteredFormat.textFormat.italic)",
+    ).execute()
+
+    notes  = {}
+    italic = set()
+    sheets = result.get("sheets", [])
+    if not sheets:
+        return notes, italic
+    data = sheets[0].get("data", [])
+    if not data:
+        return notes, italic
+    for row_idx, row in enumerate(data[0].get("rowData", [])):
+        for col_idx, cell in enumerate(row.get("values", [])):
+            note = cell.get("note", "").strip()
+            if note:
+                notes[(row_idx, col_idx)] = note
+            fmt = cell.get("userEnteredFormat", {})
+            if fmt.get("textFormat", {}).get("italic"):
+                italic.add((row_idx, col_idx))
+    return notes, italic
+
+
+def parse_tab(rows, notes=None, italic_cells=None):
     """
     Parses the raw rows from a tab and returns a structured list of days.
 
@@ -225,8 +294,11 @@ def parse_tab(rows, notes=None):
                     series = []
                     for s in range(N_SERIES):
                         # Access with fallback to "" if the row is shorter than expected
-                        reps = ex_row[col].strip() if col < len(ex_row) else ""
-                        peso = ex_row[col + 1].strip() if (col + 1) < len(ex_row) else ""
+                        reps  = ex_row[col].strip() if col < len(ex_row) else ""
+                        # Treat italic peso cells as empty — they are AI suggestions,
+                        # not real training data entered by Nicolás.
+                        peso_raw = ex_row[col + 1].strip() if (col + 1) < len(ex_row) else ""
+                        peso = "" if (italic_cells and (i, col + 1) in italic_cells) else peso_raw
                         series.append({"reps": reps, "peso": peso})
                         col += 2  # advance 2 columns (Rep + Peso)
                     weeks.append({"week": w + 1, "series": series})
@@ -244,31 +316,51 @@ def parse_tab(rows, notes=None):
 def get_latest_week_indices(period):
     """
     Detects which weeks have data loaded in the period and returns the
-    indices (0-based) of the current and previous weeks.
+    indices (0-based) of the current (last completed) and previous weeks.
 
-    Useful for weekly mode: the "current week" is the last one with any data,
-    and the "previous week" is the immediately prior one.
+    A week is considered "complete" when all training days in the period
+    have at least one exercise with real peso data for that week.
+    If the most recent week with data is incomplete (ongoing), it is treated
+    as the current in-progress week and is skipped in favour of the last
+    fully completed one.
 
     Args:
         period: Dict with format {"period": str, "days": [...]}.
 
     Returns:
         Tuple (current_idx, prev_idx) with 0-based indices.
-        prev_idx is None if the current week is the first.
-        Both are None if there is no data in the period.
+        prev_idx is None if the current week is the first completed week.
+        Both are None if there is no completed week in the period.
     """
-    weeks_with_data = set()
+    total_days = len(period["days"])
+
+    # Build a mapping: week_idx → set of day numbers that have real data.
+    days_with_data: dict[int, set] = {}
     for day in period["days"]:
         for ex in day["exercises"]:
             for w in ex["weeks"]:
-                if any(s["reps"] or s["peso"] for s in w["series"]):
-                    weeks_with_data.add(w["week"] - 1)  # convert to 0-based
+                # Only count a week as "with data" if there is a peso value.
+                # Reps alone are pre-filled from the PDF routine structure and
+                # don't indicate that the session was actually performed.
+                if any(s["peso"] for s in w["series"]):
+                    week_idx = w["week"] - 1  # convert to 0-based
+                    days_with_data.setdefault(week_idx, set()).add(day["day"])
 
-    if not weeks_with_data:
+    if not days_with_data:
         return (None, None)
 
-    current = max(weeks_with_data)
-    prev = current - 1 if current > 0 else None
+    # A week is complete when every training day has data.
+    completed = sorted(
+        idx for idx, days in days_with_data.items()
+        if len(days) >= total_days
+    )
+
+    if not completed:
+        # No fully completed week yet (period just started).
+        return (None, None)
+
+    current = completed[-1]
+    prev    = completed[-2] if len(completed) >= 2 else None
     return (current, prev)
 
 
@@ -292,7 +384,7 @@ def extract_week_data(period, week_idx):
             if week_idx >= len(ex["weeks"]):
                 continue
             week = ex["weeks"][week_idx]
-            if any(s["reps"] or s["peso"] for s in week["series"]):
+            if any(s["peso"] for s in week["series"]):
                 exercises.append({"name": ex["name"], "series": week["series"]})
         if exercises:
             result.append({"day": day["day"], "exercises": exercises})
@@ -303,12 +395,18 @@ def load_all_periods(service, spreadsheet_id):
     """
     Loads and parses all tabs from the spreadsheet.
     Returns periods ordered with index 0 = most recent.
+
+    Notes and italic formatting are fetched together in a single API call per tab
+    (via read_tab_metadata) to stay within the Sheets API read quota (60 req/min/user).
+    Italic peso cells (AI suggestions) are treated as empty so they are never
+    mistaken for real training data.
     """
     tabs = list_tabs(service, spreadsheet_id)
     periods = []
     for tab in tabs:
-        rows = read_tab(service, spreadsheet_id, tab)
-        days = parse_tab(rows)
+        rows              = read_tab(service, spreadsheet_id, tab)
+        notes, italic_cells = read_tab_metadata(service, spreadsheet_id, tab)
+        days              = parse_tab(rows, notes=notes, italic_cells=italic_cells)
         periods.append({"period": tab, "days": days})
     return periods
 

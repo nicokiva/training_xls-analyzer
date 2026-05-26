@@ -55,6 +55,7 @@ How to interpret the data:
 - Data is ordered: Week 1 → 2 → 3 → 4, with 3 sets per week.
 - Each "day" (Day 1, Day 2, etc.) is a fixed training session that repeats every week. Day 1 of Week 1 and Day 1 of Week 2 are the same session done 7 days apart. The weeks show how performance on that same session evolves over the month.
 - Exercises marked as *(combinado)* or (combinado) are done back-to-back as a superset with minimal rest. Their weights are intentionally lower — do NOT read this as regression. There can be multiple independent combined groups in the same day.
+- If the same exercise appears once as *(combinado)* and once without that label, they represent DIFFERENT execution contexts and their weights are NOT comparable. Never cross-compare a combined occurrence with an isolated one.
 - Cell notes (marked as "Note:") are observations or instructions from the coach — take them into account in the analysis.
 - When comparing weights across periods, data is always ordered oldest → most recent. More weight in a more recent period = progress. Less weight in a more recent period = regression. Never describe a decrease in weight as an improvement.
 - The weight shown per period is the **settled weight** (last week's average), not the peak. Week 1 is often a discovery week where Nicolás tries a weight and may overshoot — subsequent weeks settle to what's actually sustainable. Always base suggestions on the settled weight, never on a single high outlier week.
@@ -165,9 +166,18 @@ def _last_settled_peso(ex):
     If the period showed genuine progression (e.g. 37.5 → 40 → 42.5 → 45),
     the last week still gives the right baseline (45 kg — what he achieved).
     """
+    _, settled = _last_settled_weeks(ex)
+    return settled
+
+
+def _last_settled_weeks(ex):
+    """
+    Returns (num_weeks_with_data, settled_peso) for an exercise.
+    Used to pick the richest occurrence when the same exercise repeats across days.
+    """
+    weeks_with_data = 0
     last_pesos = None
     for w in ex["weeks"]:
-        # Collect all numeric peso values for this week
         pesos = []
         for s in w["series"]:
             try:
@@ -177,11 +187,10 @@ def _last_settled_peso(ex):
             except (TypeError, ValueError):
                 pass
         if pesos:
-            # Keep overwriting so we end up with the LAST week that has data
+            weeks_with_data += 1
             last_pesos = pesos
-    if last_pesos is None:
-        return None
-    return sum(last_pesos) / len(last_pesos)
+    settled = sum(last_pesos) / len(last_pesos) if last_pesos else None
+    return weeks_with_data, settled
 
 
 def _format_exercise_history_compact(periods):
@@ -189,49 +198,63 @@ def _format_exercise_history_compact(periods):
     Compact format: one line per exercise showing the settled weight per period
     (oldest → newest). Uses the last week's average — not the peak — so that
     'discovery' week overshoots don't inflate the baseline for the next period.
-    Combined exercises are labelled with (combinado).
+
+    When the same exercise appears multiple times within a period (e.g. abdomen
+    repeats across all 4 days), only the RICHEST occurrence is kept — the one
+    with the most weeks of data, breaking ties by highest settled weight. This
+    avoids confusing the AI with contradictory entries like "ORIG1:12kg | ORIG1:5kg".
+
+    Exercises are keyed by (name, is_comb) so a press done in a triserie and the
+    same press done in isolation are treated as separate series — their weights are
+    not directly comparable and must never be merged onto the same history line.
     """
     ordered = list(reversed(periods))
-    exercise_entries = {}   # name → list of "period:Xkg"
-    exercise_is_comb = {}   # name → bool
+    # best_per_period[(period, name, is_comb)] = (num_weeks, settled)
+    best_per_period = {}
 
     for period_data in ordered:
         period = period_data["period"]
         for day_data in period_data["days"]:
             for ex in day_data["exercises"]:
-                name = ex["name"]
-                if ex.get("is_comb"):
-                    exercise_is_comb[name] = True
-                settled = _last_settled_peso(ex)
-                if settled is not None:
-                    if name not in exercise_entries:
-                        exercise_entries[name] = []
-                    exercise_entries[name].append(f"{period[:5]}:{settled:.1f}kg")
+                name    = ex["name"]
+                is_comb = ex.get("is_comb", False)
+                n_weeks, settled = _last_settled_weeks(ex)
+                if settled is None:
+                    continue
+                key = (period, name, is_comb)
+                prev_n, prev_s = best_per_period.get(key, (0, 0))
+                if n_weeks > prev_n or (n_weeks == prev_n and settled > prev_s):
+                    best_per_period[key] = (n_weeks, settled)
+
+    # Rebuild ordered entries: (name, is_comb) → list of (period, settled)
+    exercise_entries = {}
+    for (period, name, is_comb), (_, settled) in best_per_period.items():
+        exercise_entries.setdefault((name, is_comb), []).append((period, settled))
 
     lines = []
-    for name, entries in exercise_entries.items():
-        label = f"**{name}**" + (" *(combinado)*" if exercise_is_comb.get(name) else "")
-        lines.append(f"{label}: {' | '.join(entries)}")
+    for (name, is_comb), period_entries in exercise_entries.items():
+        label = f"**{name}**" + (" *(combinado)*" if is_comb else "")
+        parts = [f"{p[:5]}:{s:.1f}kg" for p, s in period_entries]
+        lines.append(f"{label}: {' | '.join(parts)}")
     return "\n".join(lines)
 
 
 def _format_exercise_history(periods):
     """
     Verbose format: full set-by-set data per period.
-    Combined exercises are labelled with (combinado) so the AI understands
-    their weights are intentionally lower (performed back-to-back, less rest).
+    Exercises are keyed by (name, is_comb) so a combined press and an isolated
+    press are shown as separate entries — their weights are not comparable.
     """
     ordered = list(reversed(periods))
+    # exercise_history[(name, is_comb)] = [{"period": ..., "data": ...}, ...]
     exercise_history = {}
-    exercise_is_comb = {}
 
     for period_data in ordered:
         period = period_data["period"]
         for day_data in period_data["days"]:
             for ex in day_data["exercises"]:
-                name = ex["name"]
-                if ex.get("is_comb"):
-                    exercise_is_comb[name] = True
+                name    = ex["name"]
+                is_comb = ex.get("is_comb", False)
                 weeks_with_data = []
                 for w in ex["weeks"]:
                     series_parts = []
@@ -244,16 +267,17 @@ def _format_exercise_history(periods):
                         weeks_with_data.append(f"Wk{w['week']}: {' '.join(series_parts)}")
 
                 if weeks_with_data:
-                    if name not in exercise_history:
-                        exercise_history[name] = []
-                    exercise_history[name].append({
+                    key = (name, is_comb)
+                    if key not in exercise_history:
+                        exercise_history[key] = []
+                    exercise_history[key].append({
                         "period": period,
                         "data":   " | ".join(weeks_with_data),
                     })
 
     lines = []
-    for name, history in exercise_history.items():
-        label = f"**{name}**" + (" *(combinado)*" if exercise_is_comb.get(name) else "")
+    for (name, is_comb), history in exercise_history.items():
+        label = f"**{name}**" + (" *(combinado)*" if is_comb else "")
         lines.append(label)
         for entry in history:
             lines.append(f"  {entry['period']}: {entry['data']}")
@@ -368,28 +392,25 @@ def build_monthly_prompt(periods, goal):
 
 
 def build_weekly_prompt(period, current_week_data, prev_week_data, current_week_num, goal,
-                        prev_report=None):
+                        prev_report=None, prior_periods=None):
     """
     Prompt for weekly mode: compares the current week with the previous one.
     Loads from templates/weekly.txt (with prev week) or templates/weekly_first.txt (no prev).
-    """
-    weeks_with_data = set(
-        w["week"]
-        for day in period["days"]
-        for ex in day["exercises"]
-        for w in ex["weeks"]
-        if any(s["reps"] or s["peso"] for s in w["series"])
-    )
-    total_weeks = len(weeks_with_data)
 
+    prior_periods: list of completed periods BEFORE the current one (for historical context).
+                   Only their settled weights are included — no week-by-week breakdown.
+                   Weeks beyond the analyzed one are intentionally excluded.
+    """
     current_block = _format_week_data(current_week_data, f"Week {current_week_num} (current, last with data)")
     prev_block_report = _format_prev_report(prev_report)
+    history_block = _format_exercise_history_compact(prior_periods) if prior_periods else "(no prior history)"
 
     if prev_week_data:
         prev_block = _format_week_data(prev_week_data, f"Week {current_week_num - 1} (previous)")
         result = _load_template("weekly", goal=goal, period=period["period"],
                                 current_week=current_block, prev_week=prev_block,
-                                week_num=current_week_num, prev_report=prev_block_report)
+                                week_num=current_week_num, prev_report=prev_block_report,
+                                history=history_block)
         if result:
             return result
         return (
@@ -397,19 +418,21 @@ def build_weekly_prompt(period, current_week_data, prev_week_data, current_week_
             f"Weekly check-in period **{period['period']}** "
             f"(week {current_week_num} is the last with data — do NOT mention missing weeks).\n"
             f"Goal: **{goal}**.\n\n"
+            f"## Training history (prior periods)\n\n{history_block}\n\n"
             f"## Previous week\n\n{prev_block}\n"
             f"## Current week\n\n{current_block}\n"
         )
     else:
         result = _load_template("weekly_first", goal=goal, period=period["period"],
                                 current_week=current_block, week_num=current_week_num,
-                                prev_report=prev_block_report)
+                                prev_report=prev_block_report, history=history_block)
         if result:
             return result
         return (
             f"{prev_block_report}"
             f"First week of period **{period['period']}**.\n"
             f"Goal: **{goal}**.\n\n"
+            f"## Training history (prior periods)\n\n{history_block}\n\n"
             f"## Week 1 data\n\n{current_block}\n"
         )
 
@@ -571,7 +594,8 @@ def analyze(periods, api_key, mock=False, mode="global", goal="hipertrofia",
     elif mode == "weekly":
         prompt = build_weekly_prompt(
             periods[0], current_week_data, prev_week_data, current_week_num, goal,
-            prev_report=prev_report
+            prev_report=prev_report,
+            prior_periods=periods[1:] if len(periods) > 1 else None,
         )
     else:
         prompt = build_global_prompt(periods, goal)

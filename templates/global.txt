@@ -11,4 +11,6 @@ Cover:
 
 Keep in mind that exercises change between periods — compare across equivalent movement patterns (e.g. chest press variations, row variations) not just identical exercise names.
 
+Important: whenever you mention an exercise that is marked *(combinado)*, always note in parentheses that it is part of a combined group (superset/triserie). This context is key because weights in combined exercises are intentionally lower and should never be compared directly to standalone sets.
+
 {history}
