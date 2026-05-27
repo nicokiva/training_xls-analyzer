@@ -50,6 +50,7 @@ from helpers.ai import analyze
 from helpers.mailer import send_analysis
 from helpers.events import consume_pending_events, mark_event_processed
 from helpers.writer import parse_suggestions, strip_suggestions_block, write_suggestions_to_sheet, format_suggestions_for_email
+from helpers.catalog import ensure_classified, calculate_volume, format_volume_block
 from training_shared.events import EventType
 
 # load_dotenv() must be called before os.getenv() so the .env values are available.
@@ -247,6 +248,19 @@ def run_analysis(mode, args, service, periods, periods_override=None, return_onl
         periods_for_prompt = [target_period] + [p for p in periods if p is not target_period]
 
     print(f"[{mode}] Analyzing with Groq...")
+
+    # For new-routine: pre-calculate volume so the AI gets real numbers, not estimates.
+    volume_block = None
+    if mode == "new-routine":
+        all_exercise_names = [
+            ex["name"]
+            for day in target_period["days"]
+            for ex in day["exercises"]
+        ]
+        catalog = ensure_classified(all_exercise_names, args.api_key)
+        volume  = calculate_volume(target_period, catalog)
+        volume_block = format_volume_block(volume)
+
     analysis = analyze(
         periods_for_prompt,
         args.api_key,
@@ -257,6 +271,7 @@ def run_analysis(mode, args, service, periods, periods_override=None, return_onl
         prev_week_data=prev_week_data,
         current_week_num=current_week_num,
         prev_report=prev_report,
+        volume_block=volume_block,
     )
 
     # The system prompt now instructs the AI to respond directly in Spanish,

@@ -354,7 +354,7 @@ def build_global_prompt(periods, goal):
     )
 
 
-def build_new_routine_prompt(periods, goal):
+def build_new_routine_prompt(periods, goal, volume_block=None):
     """
     New-routine prompt. periods[0] is the freshly-uploaded routine (no real data yet —
     only the structure is used). periods[1:] is the historical context.
@@ -365,9 +365,11 @@ def build_new_routine_prompt(periods, goal):
     new_period    = periods[0]
     routine_block = _format_routine_structure(new_period)
     history_block = _format_exercise_history_compact(periods[1:]) if len(periods) > 1 else "(no prior history)"
+    vol_block     = volume_block or "(volumen no calculado)"
 
     result = _load_template("new-routine", goal=goal, period=new_period["period"],
-                            routine=routine_block, history=history_block)
+                            routine=routine_block, history=history_block,
+                            volume_block=vol_block)
     if result:
         return result
     return (
@@ -576,7 +578,7 @@ def translate_to_spanish(text, api_key):
 
 def analyze(periods, api_key, mock=False, mode="global", goal="hipertrofia",
             current_week_data=None, prev_week_data=None, current_week_num=None,
-            prev_report=None):
+            prev_report=None, volume_block=None):
     """
     Generates a training analysis according to the requested mode.
 
@@ -591,6 +593,7 @@ def analyze(periods, api_key, mock=False, mode="global", goal="hipertrofia",
         current_week_num:  Current week number 1-based (only for 'weekly' mode).
         prev_report:       Text of the previous analysis for this mode (Markdown).
                            Passed to the prompt so the AI can follow up on prior recommendations.
+        volume_block:      Pre-calculated weekly volume string (only for 'new-routine' mode).
 
     Returns:
         String with the analysis in Markdown.
@@ -599,7 +602,7 @@ def analyze(periods, api_key, mock=False, mode="global", goal="hipertrofia",
         return _MOCK_OUTPUTS.get(mode, _MOCK_OUTPUTS["global"])
 
     if mode == "new-routine":
-        prompt = build_new_routine_prompt(periods, goal)
+        prompt = build_new_routine_prompt(periods, goal, volume_block=volume_block)
     elif mode == "monthly":
         prompt = build_monthly_prompt(periods, goal)
     elif mode == "weekly":

@@ -28,7 +28,11 @@ For hypertrophy, the last set of each exercise should be close to failure. Based
 He already uses drop sets on some exercises (e.g. triceps, hammer). Identify all exercises where his history shows drop sets or weight reductions, and confirm whether to keep them, extend them, or simplify them for this period.
 
 **5. Volumen y frecuencia: ¿es suficiente para crecer?**
-Count sets per muscle group per week (direct and indirect volume). Compare against hypertrophy evidence (10–20 sets/muscle/week for intermediate lifters). Pay special attention to the muscle groups most relevant to his goal ({goal}) — flag anything significantly below target and suggest a concrete fix the coach could consider (e.g. "agregar una serie extra de X al final del Día Y"). If volume is adequate, confirm briefly.
+The following volume was calculated directly from the coach's routine by the script — these are real numbers, not estimates. Use them as-is:
+
+{volume_block}
+
+Compare against hypertrophy evidence (10–20 sets/muscle/week for intermediate lifters). Pay special attention to the muscle groups most relevant to his goal ({goal}) — flag anything significantly below target and suggest a concrete fix the coach could consider (e.g. "agregar una serie extra de X al final del Día Y"). If volume is adequate, confirm briefly.
 
 Do NOT: repeat information visible in the weights table, give generic advice like "comé proteína" or "dormí bien", or pad with unnecessary positives.
 
