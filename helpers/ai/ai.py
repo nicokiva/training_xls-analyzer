@@ -289,6 +289,7 @@ def _format_routine_structure(period):
     """
     Formats the exercise structure of a period without execution data.
     Useful for new-routine where the tab doesn't have reps/weights loaded yet.
+    Includes target sets × reps from the PDF-parsed data (week 1, rep column).
     Combined exercises are marked with (combinado).
     """
     lines = []
@@ -296,7 +297,17 @@ def _format_routine_structure(period):
         lines.append(f"Day {day['day']}:")
         for ex in day["exercises"]:
             label = ex['name'] + (" (combinado)" if ex.get("is_comb") else "")
-            lines.append(f"  - {label}")
+            # Extract target reps from week 1 (coach-prescribed, same every week)
+            target_reps = None
+            if ex.get("weeks"):
+                w1_series = ex["weeks"][0]["series"]
+                rep_values = [s["reps"] for s in w1_series if s.get("reps")]
+                if rep_values:
+                    n_sets = len(w1_series)
+                    unique_reps = list(dict.fromkeys(rep_values))
+                    target_reps = f"{n_sets}x{'/'.join(unique_reps)}"
+            suffix = f" [{target_reps}]" if target_reps else ""
+            lines.append(f"  - {label}{suffix}")
         lines.append("")
     return "\n".join(lines)
 
