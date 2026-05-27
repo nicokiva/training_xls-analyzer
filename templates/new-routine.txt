@@ -24,8 +24,12 @@ For each exercise in this routine, suggest a specific rest time based on the dem
 **3. Cómo llegar al fallo (o cerca)**
 For hypertrophy, the last set of each exercise should be close to failure. Based on his history, identify which exercises he already pushes to failure (drop sets visible in history) and which he could push harder. Give specific guidance per exercise group.
 
+**Safety rule — STRICTLY ENFORCED**: Never suggest failure techniques (drop sets, rest-pause, forced reps) on free-barbell exercises under axial load: Sentadilla, Peso muerto and its variations, Empuje de hombros con barra, Empuje de pecho con barra. Accumulated fatigue in these movements destroys spinal stability before the target muscle fails — this is a direct injury risk. Failure techniques are only appropriate for guided machines (Prensa, Hammer, poleas) and isolation exercises.
+
 **4. Drop sets y técnicas que ya usa**
 He already uses drop sets on some exercises (e.g. triceps, hammer). Identify all exercises where his history shows drop sets or weight reductions, and confirm whether to keep them, extend them, or simplify them for this period.
+
+Apply the same safety rule: do not suggest extending drop sets to free-barbell exercises, even if he has previously used them there. If you see drop sets on a barbell exercise in his history, note it but do NOT recommend continuing that pattern — flag it as risky instead.
 
 **5. Volumen y frecuencia: ¿es suficiente para crecer?**
 The following volume was calculated directly from the coach's routine by the script — these are real numbers, not estimates. Use them as-is:
@@ -33,6 +37,8 @@ The following volume was calculated directly from the coach's routine by the scr
 {volume_block}
 
 Compare against hypertrophy evidence (10–20 sets/muscle/week for intermediate lifters). Pay special attention to the muscle groups most relevant to his goal ({goal}) — flag anything significantly below target and suggest a concrete fix the coach could consider (e.g. "agregar una serie extra de X al final del Día Y"). If volume is adequate, confirm briefly.
+
+**Split respect rule — STRICTLY ENFORCED**: When suggesting a volume fix, you may ONLY add an exercise to a day that already works that muscle group as primary. Never suggest adding a chest, shoulder, back, or arm exercise to a legs day, or a legs exercise to an upper-body day. If the only way to fix a muscle's volume is to violate the split, say so explicitly and leave the decision to the coach.
 
 Do NOT: repeat information visible in the weights table, give generic advice like "comé proteína" or "dormí bien", or pad with unnecessary positives.
 
