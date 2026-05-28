@@ -304,7 +304,7 @@ def _format_exercise_history_compact(periods):
     not directly comparable and must never be merged onto the same history line.
     """
     ordered = list(reversed(periods))
-    # best_per_period[(period, name, is_comb)] = (num_weeks, settled)
+    # best_per_period[(period, name, is_comb)] = (num_weeks, settled, ex_note, set_notes)
     best_per_period = {}
 
     for period_data in ordered:
@@ -316,21 +316,43 @@ def _format_exercise_history_compact(periods):
                 n_weeks, settled = _last_settled_weeks(ex)
                 if settled is None:
                     continue
+                ex_note   = ex.get("note", "")
+                set_notes = [
+                    s["note"]
+                    for w in ex["weeks"]
+                    for s in w["series"]
+                    if s.get("note")
+                ]
                 key = (period, name, is_comb)
-                prev_n, prev_s = best_per_period.get(key, (0, 0))
+                prev = best_per_period.get(key)
+                prev_n = prev[0] if prev else 0
+                prev_s = prev[1] if prev else 0
                 if n_weeks > prev_n or (n_weeks == prev_n and settled > prev_s):
-                    best_per_period[key] = (n_weeks, settled)
+                    best_per_period[key] = (n_weeks, settled, ex_note, set_notes)
 
-    # Rebuild ordered entries: (name, is_comb) → list of (period, settled)
+    # Rebuild ordered entries: (name, is_comb) → list of (period, settled, ex_note, set_notes)
     exercise_entries = {}
-    for (period, name, is_comb), (_, settled) in best_per_period.items():
-        exercise_entries.setdefault((name, is_comb), []).append((period, settled))
+    for (period, name, is_comb), (_, settled, ex_note, set_notes) in best_per_period.items():
+        exercise_entries.setdefault((name, is_comb), []).append(
+            (period, settled, ex_note, set_notes)
+        )
 
     lines = []
     for (name, is_comb), period_entries in exercise_entries.items():
         label = f"**{name}**" + (" *(combinado)*" if is_comb else "")
-        parts = [f"{p[:5]}:{s:.1f}kg" for p, s in period_entries]
-        lines.append(f"{label}: {' | '.join(parts)}")
+        parts = [f"{p[:5]}:{s:.1f}kg" for p, s, _, __ in period_entries]
+        line = f"{label}: {' | '.join(parts)}"
+        # Append any notes collected for this exercise across periods
+        note_parts = []
+        for p, _, ex_note, set_notes in period_entries:
+            tag = p[:5]
+            if ex_note:
+                note_parts.append(f"[Note {tag}: \"{ex_note}\"]")
+            for sn in set_notes:
+                note_parts.append(f"[Note {tag}: \"{sn}\"]")
+        if note_parts:
+            line += "  " + "  ".join(note_parts)
+        lines.append(line)
     return "\n".join(lines)
 
 
@@ -341,7 +363,7 @@ def _format_exercise_history(periods):
     press are shown as separate entries — their weights are not comparable.
     """
     ordered = list(reversed(periods))
-    # exercise_history[(name, is_comb)] = [{"period": ..., "data": ...}, ...]
+    # exercise_history[(name, is_comb)] = [{"period": ..., "data": ..., "note": ...}, ...]
     exercise_history = {}
 
     for period_data in ordered:
@@ -350,14 +372,16 @@ def _format_exercise_history(periods):
             for ex in day_data["exercises"]:
                 name    = ex["name"]
                 is_comb = ex.get("is_comb", False)
+                ex_note = ex.get("note", "")
                 weeks_with_data = []
                 for w in ex["weeks"]:
                     series_parts = []
                     for idx, s in enumerate(w["series"]):
                         if s["reps"] or s["peso"]:
-                            reps = s["reps"] or "-"
-                            peso = s["peso"] or "-"
-                            series_parts.append(f"S{idx+1}:{reps}r/{peso}kg")
+                            reps     = s["reps"] or "-"
+                            peso     = s["peso"] or "-"
+                            set_note = f' ("{s["note"]}")' if s.get("note") else ""
+                            series_parts.append(f"S{idx+1}:{reps}r/{peso}kg{set_note}")
                     if series_parts:
                         weeks_with_data.append(f"Wk{w['week']}: {' '.join(series_parts)}")
 
@@ -368,6 +392,7 @@ def _format_exercise_history(periods):
                     exercise_history[key].append({
                         "period": period,
                         "data":   " | ".join(weeks_with_data),
+                        "note":   ex_note,
                     })
 
     lines = []
@@ -375,7 +400,8 @@ def _format_exercise_history(periods):
         label = f"**{name}**" + (" *(combinado)*" if is_comb else "")
         lines.append(label)
         for entry in history:
-            lines.append(f"  {entry['period']}: {entry['data']}")
+            note_suffix = f'  [Note: "{entry["note"]}"]' if entry["note"] else ""
+            lines.append(f"  {entry['period']}: {entry['data']}{note_suffix}")
         lines.append("")
     return "\n".join(lines)
 

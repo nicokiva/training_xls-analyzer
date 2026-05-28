@@ -287,6 +287,10 @@ def parse_tab(rows, notes=None, italic_cells=None):
                 raw_name = ex_row[0].strip()
                 is_comb  = raw_name.startswith("[C] ")
                 name     = raw_name[4:] if is_comb else raw_name
+
+                # Note on column A = coach instruction or general observation for this exercise.
+                ex_note = notes.get((i, 0), "").strip()
+
                 weeks = []
                 col = 1  # data columns start at col 1 (B)
 
@@ -299,11 +303,19 @@ def parse_tab(rows, notes=None, italic_cells=None):
                         # not real training data entered by Nicolás.
                         peso_raw = ex_row[col + 1].strip() if (col + 1) < len(ex_row) else ""
                         peso = "" if (italic_cells and (i, col + 1) in italic_cells) else peso_raw
-                        series.append({"reps": reps, "peso": peso})
+                        # Note on a peso cell = observation about how that specific set went.
+                        set_note = notes.get((i, col + 1), "").strip()
+                        entry = {"reps": reps, "peso": peso}
+                        if set_note:
+                            entry["note"] = set_note
+                        series.append(entry)
                         col += 2  # advance 2 columns (Rep + Peso)
                     weeks.append({"week": w + 1, "series": series})
 
-                exercises.append({"name": name, "is_comb": is_comb, "weeks": weeks})
+                ex_dict = {"name": name, "is_comb": is_comb, "weeks": weeks}
+                if ex_note:
+                    ex_dict["note"] = ex_note
+                exercises.append(ex_dict)
                 i += 1
 
             days.append({"day": day_num, "exercises": exercises})
