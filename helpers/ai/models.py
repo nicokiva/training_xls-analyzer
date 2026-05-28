@@ -6,7 +6,7 @@ no regex parsing, no hallucinated formats.
 """
 
 from typing import List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, RootModel
 
 
 class WeightSuggestion(BaseModel):
@@ -29,3 +29,8 @@ class WeightSuggestion(BaseModel):
     reason: str = Field(
         description="Una línea de justificación técnica basada en el historial del atleta."
     )
+
+
+class WeightSuggestionList(RootModel[List[WeightSuggestion]]):
+    """Wrapper so the SDK can handle a top-level JSON array via response_schema."""
+    pass

@@ -30,10 +30,10 @@ from typing import List
 from google import genai
 from google.genai import types
 
-from .models import WeightSuggestion
+from .models import WeightSuggestion, WeightSuggestionList
 
-MODEL            = "gemini-2.0-flash"   # prose analysis
-MODEL_STRUCTURED = "gemini-2.5-flash"   # structured weight suggestions
+MODEL            = "gemini-2.5-flash-lite"   # prose analysis
+MODEL_STRUCTURED = "gemini-2.5-flash-lite"   # structured weight suggestions
 
 # Templates are looked up relative to the project root (two levels up from this file).
 # Path(__file__) is the absolute path of this file.
@@ -140,8 +140,8 @@ def _call_gemini(client, system_prompt, user_prompt, max_tokens=4096, model=None
         except Exception as e:
             err = str(e)
             _log(f"--- ERROR (attempt {attempt+1}) ---\n{err}")
-            if ("429" in err or "RESOURCE_EXHAUSTED" in err) and attempt == 0:
-                print("  Rate limit hit — waiting 65s for window to reset...")
+            if ("429" in err or "RESOURCE_EXHAUSTED" in err or "503" in err or "UNAVAILABLE" in err) and attempt == 0:
+                print("  Temporary error — waiting 65s and retrying...")
                 time.sleep(65)
                 continue
             raise
@@ -723,23 +723,23 @@ def get_weight_suggestions(
                     system_instruction=system,
                     temperature=0.1,
                     response_mime_type="application/json",
-                    response_schema=List[WeightSuggestion],
+                    response_schema=WeightSuggestionList,
                 ),
                 contents=prompt,
             )
-            parsed: list[WeightSuggestion] = response.parsed
+            items: list[WeightSuggestion] = response.parsed.root
             with open(log_path, "a", encoding="utf-8") as f:
-                f.write(f"--- STRUCTURED RESPONSE ({len(parsed)} items) ---\n")
-                for item in parsed:
+                f.write(f"--- STRUCTURED RESPONSE ({len(items)} items) ---\n")
+                for item in items:
                     f.write(f"  {item.model_dump()}\n")
             # Convert Pydantic objects → plain dicts for the rest of the pipeline
-            return [item.model_dump() for item in parsed]
+            return [item.model_dump() for item in items]
         except Exception as e:
             err = str(e)
             with open(log_path, "a", encoding="utf-8") as f:
                 f.write(f"--- ERROR (attempt {attempt+1}) ---\n{err}\n")
-            if ("429" in err or "RESOURCE_EXHAUSTED" in err) and attempt == 0:
-                print("  Rate limit hit — waiting 65s...")
+            if ("429" in err or "RESOURCE_EXHAUSTED" in err or "503" in err or "UNAVAILABLE" in err) and attempt == 0:
+                print("  Temporary error — waiting 65s and retrying...")
                 time.sleep(65)
                 continue
             raise
