@@ -4,9 +4,13 @@ Nicolás just received a new training routine assigned by his coach for period {
 
 {routine}
 
-## Full training history
+## Full training history (compact — settled weights per period)
 
 {history}
+
+## Pesos de cierre por ejercicio (pre-calculados — usar como baseline directo)
+
+{settled_weights_block}
 
 ---
 
@@ -66,10 +70,9 @@ If a muscle is low, suggest ONE fix: an existing exercise that could add a set, 
 **STRICTLY ENFORCED**: Never suggest adding exercises from one muscle group to a day dedicated to a different group.
 
 ### Pesos sugeridos
-After the analysis, output a JSON block with suggested starting weights for each exercise. Base suggestions on his full history using this priority:
-1. If the exact exercise appears in the immediately prior period → use that settled weight as the baseline.
-2. If the exercise appears only in older periods → take that weight but adjust upward based on the progress he made in exercises with the same movement pattern during the intermediate periods.
-3. If the exercise never appeared → estimate from the most recent history of exercises with the same movement pattern and muscle group.
+After the analysis, output a JSON block with suggested starting weights for each exercise. Use the pre-calculated baseline from **"Pesos de cierre por ejercicio"** above as the primary source — do NOT derive weights from the compact history text. Priority:
+1. If the exercise has a baseline in the settled weights block → use that weight directly, adjusted only for combined/isolated context change.
+2. If the exercise has no prior history → estimate from the most recent history of exercises with the same movement pattern and muscle group, and state that explicitly in "reason".
 
 When the exercise appears as isolated in history but is now combined (or vice versa), adjust accordingly: combined execution limits output due to accumulated fatigue — expect 10–20% less than isolated baseline. If it was combined before and is now isolated, the inverse applies.
 

@@ -193,6 +193,74 @@ def _last_settled_weeks(ex):
     return weeks_with_data, settled
 
 
+def _normalize_ex_name(name: str) -> str:
+    """Lowercase + strip accents for case-insensitive exercise matching."""
+    import unicodedata
+    nfkd = unicodedata.normalize("NFKD", name.lower().strip())
+    return "".join(c for c in nfkd if not unicodedata.combining(c))
+
+
+def _compute_settled_weights(new_period: dict, prior_periods: list) -> str:
+    """
+    For each exercise in new_period, find its most recent settled weight from
+    prior_periods using normalized (case-insensitive, accent-stripped) name matching.
+
+    Shows the most recent entry AND (if it has fewer than 3 weeks of data) also
+    the most complete entry so the AI has reliable baselines when a recent period
+    is sparse.
+
+    Returns a formatted block to inject into the prompt so the AI doesn't need
+    to parse exercise names from raw history text.
+    """
+    import re
+
+    def strip_parens(s):
+        return re.sub(r"\s*\(.*?\)", "", s).strip()
+
+    # Build lookup: normalized_name → [(period_label, settled, n_weeks, is_comb)]
+    # ordered from most recent (prior_periods[0]) to oldest
+    lookup: dict = {}
+    for period_data in prior_periods:
+        period_label = period_data["period"][:8]
+        for day_data in period_data["days"]:
+            for ex in day_data["exercises"]:
+                n_weeks, settled = _last_settled_weeks(ex)
+                if settled is None:
+                    continue
+                key  = _normalize_ex_name(strip_parens(ex["name"]))
+                is_c = ex.get("is_comb", False)
+                lookup.setdefault(key, []).append(
+                    (period_label, settled, n_weeks, is_c)
+                )
+
+    lines = ["Pesos de cierre por ejercicio (calculados por el script — usar como baseline):"]
+    for day_data in new_period["days"]:
+        day_num = day_data["day"]
+        for ex in day_data["exercises"]:
+            key = _normalize_ex_name(strip_parens(ex["name"]))
+            entries = lookup.get(key)
+            if not entries:
+                lines.append(f"  D{day_num} {ex['name']}: sin historial previo")
+                continue
+
+            most_recent = entries[0]
+            p_label, settled, n_weeks, is_c = most_recent
+            comb_note = " (era combinado)" if is_c else ""
+            weeks_note = f" [{n_weeks} semanas de datos]"
+            line = (f"  D{day_num} {ex['name']}: {p_label} → {settled:.1f} kg"
+                    f"{comb_note}{weeks_note}")
+
+            # If most recent is sparse (<3 weeks), also show the most complete entry
+            if n_weeks < 3 and len(entries) > 1:
+                best = max(entries[1:], key=lambda e: e[2])
+                if best[2] > n_weeks:
+                    b_label, b_settled, b_weeks, b_comb = best
+                    b_comb_note = " (era combinado)" if b_comb else ""
+                    line += (f" | referencia más completa: {b_label} → "
+                             f"{b_settled:.1f} kg [{b_weeks} semanas]{b_comb_note}")
+            lines.append(line)
+    return "\n".join(lines)
+
 def _format_exercise_history_compact(periods):
     """
     Compact format: one line per exercise showing the settled weight per period
@@ -370,6 +438,7 @@ def build_new_routine_prompt(periods, goal, volume_block=None, axial_load_exerci
     routine_block = _format_routine_structure(new_period)
     prior         = periods[1:4]  # cap at 3 periods — enough signal, fits in 12k TPM
     history_block = _format_exercise_history_compact(prior) if prior else "(no prior history)"
+    settled_block = _compute_settled_weights(new_period, prior) if prior else "(sin historial previo)"
     vol_block     = volume_block or "(volumen no calculado)"
 
     if axial_load_exercises:
@@ -380,7 +449,8 @@ def build_new_routine_prompt(periods, goal, volume_block=None, axial_load_exerci
     result = _load_template("new-routine", goal=goal, period=new_period["period"],
                             routine=routine_block, history=history_block,
                             volume_block=vol_block,
-                            axial_load_exercises=axial_block)
+                            axial_load_exercises=axial_block,
+                            settled_weights_block=settled_block)
     if result:
         return result
     return (
