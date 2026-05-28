@@ -354,7 +354,7 @@ def build_global_prompt(periods, goal):
     )
 
 
-def build_new_routine_prompt(periods, goal, volume_block=None):
+def build_new_routine_prompt(periods, goal, volume_block=None, axial_load_exercises=None):
     """
     New-routine prompt. periods[0] is the freshly-uploaded routine (no real data yet —
     only the structure is used). periods[1:] is the historical context.
@@ -367,9 +367,15 @@ def build_new_routine_prompt(periods, goal, volume_block=None):
     history_block = _format_exercise_history_compact(periods[1:]) if len(periods) > 1 else "(no prior history)"
     vol_block     = volume_block or "(volumen no calculado)"
 
+    if axial_load_exercises:
+        axial_block = ", ".join(axial_load_exercises)
+    else:
+        axial_block = "(ninguno detectado)"
+
     result = _load_template("new-routine", goal=goal, period=new_period["period"],
                             routine=routine_block, history=history_block,
-                            volume_block=vol_block)
+                            volume_block=vol_block,
+                            axial_load_exercises=axial_block)
     if result:
         return result
     return (
@@ -578,22 +584,22 @@ def translate_to_spanish(text, api_key):
 
 def analyze(periods, api_key, mock=False, mode="global", goal="hipertrofia",
             current_week_data=None, prev_week_data=None, current_week_num=None,
-            prev_report=None, volume_block=None):
+            prev_report=None, volume_block=None, axial_load_exercises=None):
     """
     Generates a training analysis according to the requested mode.
 
     Args:
-        periods:           List of periods (most recent first).
-        api_key:           Groq API key.
-        mock:              If True, returns a test analysis without calling the API.
-        mode:              Analysis mode: 'global', 'new-routine', 'monthly', 'weekly'.
-        goal:              User goal (e.g. 'hypertrophy').
-        current_week_data: Current week data (only for 'weekly' mode).
-        prev_week_data:    Previous week data (only for 'weekly' mode, can be None).
-        current_week_num:  Current week number 1-based (only for 'weekly' mode).
-        prev_report:       Text of the previous analysis for this mode (Markdown).
-                           Passed to the prompt so the AI can follow up on prior recommendations.
-        volume_block:      Pre-calculated weekly volume string (only for 'new-routine' mode).
+        periods:               List of periods (most recent first).
+        api_key:               Groq API key.
+        mock:                  If True, returns a test analysis without calling the API.
+        mode:                  Analysis mode: 'global', 'new-routine', 'monthly', 'weekly'.
+        goal:                  User goal (e.g. 'hypertrophy').
+        current_week_data:     Current week data (only for 'weekly' mode).
+        prev_week_data:        Previous week data (only for 'weekly' mode, can be None).
+        current_week_num:      Current week number 1-based (only for 'weekly' mode).
+        prev_report:           Text of the previous analysis for this mode (Markdown).
+        volume_block:          Pre-calculated weekly volume string (only for 'new-routine' mode).
+        axial_load_exercises:  List of exercise names with axial load (only for 'new-routine' mode).
 
     Returns:
         String with the analysis in Markdown.
@@ -602,7 +608,8 @@ def analyze(periods, api_key, mock=False, mode="global", goal="hipertrofia",
         return _MOCK_OUTPUTS.get(mode, _MOCK_OUTPUTS["global"])
 
     if mode == "new-routine":
-        prompt = build_new_routine_prompt(periods, goal, volume_block=volume_block)
+        prompt = build_new_routine_prompt(periods, goal, volume_block=volume_block,
+                                          axial_load_exercises=axial_load_exercises)
     elif mode == "monthly":
         prompt = build_monthly_prompt(periods, goal)
     elif mode == "weekly":

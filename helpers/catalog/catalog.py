@@ -53,23 +53,29 @@ def _classify_via_groq(name: str, api_key: str) -> dict:
         "Respond ONLY with a JSON object, no markdown, no explanation:\n"
         '{"primary": "<muscle in Spanish>", '
         '"secondary": ["<muscle>", ...], '
-        '"pattern": "<pattern>"}\n\n'
+        '"pattern": "<pattern>", '
+        '"axial_load": <true|false>}\n\n'
         "Primary muscle options: pecho, espalda, bíceps, tríceps, hombros, "
         "cuádriceps, isquiotibiales, glúteos, core\n"
         "Pattern options: horizontal_push, horizontal_pull, vertical_push, "
         "vertical_pull, squat, hip_hinge, lunge, elbow_flexion, "
-        "elbow_extension, shoulder_isolation, core\n\n"
+        "elbow_extension, shoulder_isolation, core\n"
+        "axial_load: true if the exercise places compressive load on the spine "
+        "with a free barbell (e.g. squat, deadlift, barbell overhead press, "
+        "barbell row). false for machines, cables, dumbbells, bodyweight.\n\n"
         "Important rules:\n"
-        "- 'Peso muerto' and deadlift variations → primary=espalda, pattern=hip_hinge\n"
-        "- 'Prensa' (leg press) → primary=cuádriceps, pattern=squat\n"
+        "- 'Peso muerto' and deadlift variations → primary=espalda, pattern=hip_hinge, axial_load=true\n"
+        "- 'Sentadilla' (barbell squat) → primary=cuádriceps, pattern=squat, axial_load=true\n"
+        "- 'Prensa' (leg press machine) → primary=cuádriceps, pattern=squat, axial_load=false\n"
         "- 'Remo' (row) → primary=espalda, pattern=horizontal_pull\n"
-        "- 'Dominada' (pull-up/chin-up) → primary=espalda, pattern=vertical_pull\n"
-        "- 'Tirón dorsal' (lat pulldown) → primary=espalda, pattern=vertical_pull\n"
-        "- 'Flexión de rodillas' (leg curl) → primary=isquiotibiales, pattern=hip_hinge\n"
-        "- 'Rotaciones' with torso → primary=core, pattern=core\n"
-        "- 'Extensión de cadera' → primary=glúteos, pattern=hip_hinge\n"
-        "- 'Depresores en polea' (lat depression) → primary=espalda, pattern=vertical_pull\n"
-        "- Shoulder presses → primary=hombros, pattern=vertical_push (not shoulder_isolation)\n"
+        "- 'Dominada' (pull-up/chin-up) → primary=espalda, pattern=vertical_pull, axial_load=false\n"
+        "- 'Tirón dorsal' (lat pulldown cable) → primary=espalda, pattern=vertical_pull, axial_load=false\n"
+        "- 'Flexión de rodillas' (leg curl machine) → primary=isquiotibiales, pattern=hip_hinge, axial_load=false\n"
+        "- 'Rotaciones' with torso → primary=core, pattern=core, axial_load=false\n"
+        "- 'Extensión de cadera' → primary=glúteos, pattern=hip_hinge, axial_load=false\n"
+        "- 'Depresores en polea' (cable lat depression) → primary=espalda, pattern=vertical_pull, axial_load=false\n"
+        "- Barbell shoulder press ('Empuje de hombros con barra') → primary=hombros, pattern=vertical_push, axial_load=true\n"
+        "- Dumbbell/machine shoulder press → primary=hombros, pattern=vertical_push, axial_load=false\n"
     )
     resp = client.chat.completions.create(
         model="llama-3.1-8b-instant",
@@ -111,7 +117,18 @@ def ensure_classified(exercise_names: list[str], api_key: str) -> dict:
     return catalog
 
 
-def calculate_volume(period: dict, catalog: dict) -> dict:
+def get_axial_load_exercises(exercise_names: list[str], catalog: dict) -> list[str]:
+    """
+    Return the original names of exercises in the list that have axial_load=True.
+    Used to build the dynamic safety guardrail in the prompt.
+    """
+    result = []
+    for name in exercise_names:
+        key = _normalize(name)
+        info = catalog.get(key, {})
+        if info.get("axial_load"):
+            result.append(name)
+    return result
     """
     Calculate weekly sets per muscle group (direct + indirect) for a period.
 

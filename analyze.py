@@ -50,7 +50,7 @@ from helpers.ai import analyze
 from helpers.mailer import send_analysis
 from helpers.events import consume_pending_events, mark_event_processed
 from helpers.writer import parse_suggestions, strip_suggestions_block, write_suggestions_to_sheet, format_suggestions_for_email
-from helpers.catalog import ensure_classified, calculate_volume, format_volume_block
+from helpers.catalog import ensure_classified, calculate_volume, format_volume_block, get_axial_load_exercises
 from training_shared.events import EventType
 
 # load_dotenv() must be called before os.getenv() so the .env values are available.
@@ -251,6 +251,7 @@ def run_analysis(mode, args, service, periods, periods_override=None, return_onl
 
     # For new-routine: pre-calculate volume so the AI gets real numbers, not estimates.
     volume_block = None
+    axial_load_exercises = None
     if mode == "new-routine":
         all_exercise_names = [
             ex["name"]
@@ -260,6 +261,7 @@ def run_analysis(mode, args, service, periods, periods_override=None, return_onl
         catalog = ensure_classified(all_exercise_names, args.api_key)
         volume  = calculate_volume(target_period, catalog)
         volume_block = format_volume_block(volume)
+        axial_load_exercises = get_axial_load_exercises(all_exercise_names, catalog)
 
     analysis = analyze(
         periods_for_prompt,
@@ -272,6 +274,7 @@ def run_analysis(mode, args, service, periods, periods_override=None, return_onl
         current_week_num=current_week_num,
         prev_report=prev_report,
         volume_block=volume_block,
+        axial_load_exercises=axial_load_exercises,
     )
 
     # The system prompt now instructs the AI to respond directly in Spanish,

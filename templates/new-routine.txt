@@ -8,49 +8,62 @@ Nicolás just received a new training routine assigned by his coach for period {
 
 {history}
 
-Write two sections:
+---
+
+## REGLAS DE OPERACIÓN — LEER ANTES DE ESCRIBIR CUALQUIER COSA
+
+**REGLA 1 — PROHIBICIÓN DE RUIDO**
+Cada afirmación que escribas debe estar respaldada por un dato numérico explícito extraído del historial de arriba. Si no encontrás el número, no escribís la frase. Prohibido:
+- Rangos genéricos ("2.5 a 5 kg", "90 a 120 segundos") sin citar la fecha o semana donde Nicolás los usó.
+- Consejos de gimnasio generales ("comé proteína", "dormí bien", "escuchá tu cuerpo").
+- Repetir en prosa lo que ya está en el JSON estructurado (especialmente tiempos de descanso — ya están en `rest_s`). La prosa solo justifica anomalías o lógica mecánica no-obvia.
+
+**REGLA 2 — CAPA DE SEGURIDAD (RIR)**
+El siguiente script detectó automáticamente los ejercicios de esta rutina con carga axial en barra libre:
+
+EJERCICIOS CON CARGA AXIAL: {axial_load_exercises}
+
+Para TODOS los ejercicios en esa lista:
+- La instrucción SIEMPRE es mantener RIR 1-2 (1-2 repeticiones en reserva). NUNCA RIR 0 ni fallo concéntrico.
+- Está TERMINANTEMENTE PROHIBIDO sugerir drop sets, rest-pause o forzadas en esos ejercicios, aunque el historial los muestre. Si aparecen en el historial, marcarlos como práctica de riesgo, no como algo a continuar.
+
+El RIR 0 (fallo real en la última serie) SOLO se puede prescribir en ejercicios de aislamiento, poleas o máquinas guiadas (Prensa Hammer, poleas, extensiones en máquina).
+
+**REGLA 3 — DROP SETS: PRESCRIPCIÓN QUIRÚRGICA**
+No des advertencias vacías de peligro. Si vas a prescribir un drop set, que sea concreto:
+- Únicamente en la **última serie de la última semana** del bloque (semana 4).
+- Únicamente en ejercicios donde el historial muestre que Nicolás ya tiene tolerancia técnica a la alta densidad (poleas, Hammer, máquinas guiadas).
+- Especificá los pesos exactos del drop basándote en los que ya usó.
+Si no hay evidencia de tolerancia técnica en el historial → no prescribís el drop set.
+
+---
+
+Write two sections in Spanish:
 
 ### Cómo usar esta rutina para crecer
-Write in Spanish. Be specific and data-driven — every claim must cite something from his actual history. If you can't back it up with a number or a pattern from the data, don't say it. No generic gym advice.
-
-Structure it as follows:
 
 **1. Progresión de pesos: qué dice su historial**
-For each exercise in this new routine, look up its progression across the most recent period in {history} and report:
-- The actual week-by-week weights for that exercise (W1→W2→W3→W4). If it appears as combined vs isolated, note it.
-- Whether the progression was linear, stalled, or regressed in the last period.
-- The actual week-over-week jump he used (e.g. "subió 2.5 kg por semana" or "se estancó en S3").
-- A concrete recommendation for this new period based on that pattern (e.g. "arrancá 2.5 kg por debajo del S4 anterior para dejar margen de progresión en las 4 semanas").
-If an exercise has no history, say so explicitly and explain what reference you're using for the estimate.
-Do NOT give a generic rule like "si completás todos los reps, subí 2.5 kg". Use his actual data.
+For each exercise in this new routine, look up its actual week-by-week progression in the most recent period and report: W1→W2→W3→W4 weights, whether it was linear/stalled/regressed, and the actual jump size he used. Based on that pattern, give ONE concrete recommendation for this new period (e.g. "arrancá 2.5 kg por debajo del cierre anterior para tener 4 semanas de margen").
+If an exercise has no history → say so, state which reference you're using, and recommend starting at RIR 2 conservador.
+Do NOT write any progression logic that isn't directly traceable to a specific data point in the history above.
 
-**2. Drop sets: qué hace y qué debería hacer**
-Scan the history for drop sets — defined as: same exercise, same week, the series show decreasing weights (e.g. series 1: 30 kg, series 2: 25 kg, series 3: 20 kg). For each exercise where you find this pattern:
-- Quote the actual weights (period and week where it appears).
-- Say whether the exercise is now combined or isolated in this new routine, and adjust the recommendation accordingly.
-- Give a specific instruction: continue, extend (add a drop), or simplify — with the actual weights to use in week 1.
-
-**Safety rule — STRICTLY ENFORCED**: Never suggest drop sets, rest-pause, or failure techniques on free-barbell exercises under axial load: Sentadilla, Peso muerto and its variations, Empuje de hombros con barra, Empuje de pecho con barra. If you find drop sets on those exercises in his history, flag it as risky and do NOT recommend continuing. Drop sets and failure techniques are only appropriate for guided machines (Prensa, Hammer, poleas) and isolation exercises.
+**2. Drop sets: historial y prescripción**
+Scan the history for drop sets (same exercise, same week, decreasing weights across series). For each one found:
+- Quote the exact weights (period + week).
+- Note if the exercise is now combined or isolated in this new routine, and adjust accordingly.
+- Apply Regla 3: if eligible (cable/machine, history shows tolerance) → prescribe the drop for week 4, last set, with exact weights. If not eligible → do not prescribe it.
 
 **3. Margen vs. fallo: ejercicio por ejercicio**
-For each exercise, look at the last week of the most recent period (the settled weight). Determine whether he had obvious margin or was already near failure by checking:
-- Did the series weights stay flat across all 3 series, OR did they drop (indicating he couldn't maintain)?
-- Was there a drop set on the last series?
-Report this concretely per exercise: "En X, las 3 series fueron a Y kg sin drops → tenía margen. En Z, la serie 3 bajó a W kg → ya estaba cerca del fallo."
-Do NOT write a generic instruction to "go to failure on every last set." Only say what the data shows.
+For each exercise, check the last week of the most recent period: did the series weights stay flat (margin) or drop (near failure)? Report it concretely per exercise with actual numbers. Apply Regla 2 for axial load exercises — always conclude with RIR 1-2, regardless of what the data shows.
 
 **4. Volumen y frecuencia: qué dicen los números reales**
-The following volume was calculated directly from the coach's routine by the script — these are exact numbers, not estimates. Use them as-is:
+The following volume was calculated directly from the coach's routine by the script — exact numbers, not estimates:
 
 {volume_block}
 
-For each muscle group, state whether the volume is sufficient for hypertrophy (evidence: ~10–20 direct sets/week for intermediates). Flag any muscle below 6 direct sets/week as critically low. Pay special attention to muscles directly relevant to his goal ({goal}).
-
-If a muscle is low, suggest ONE concrete fix: an exercise already in the routine that could add a set, and which day. Respect the training split — only add to days that already train that muscle as primary. If that's impossible without breaking the split, say so explicitly and leave the decision to the coach.
-
-**Split respect rule — STRICTLY ENFORCED**: Never suggest adding exercises from one muscle group to a day dedicated to a different group (e.g. no shoulder work on a legs day).
-
-Do NOT: give generic advice ("comé proteína", "dormí bien"), pad with positives, repeat information already visible in the weights table, or write about rest times in prose — rest times are already captured in the JSON (rest_s field). The only exception is if there is something non-obvious about rest logic that the table can't express (e.g. how the combined triset at the start of each day works: no rest between the first two exercises, rest only after the third).
+State whether each muscle group is sufficient for hypertrophy (~10–20 direct sets/week). Flag anything below 6 direct sets/week as critically low, paying special attention to muscles relevant to {goal}.
+If a muscle is low, suggest ONE fix: an existing exercise that could add a set, on a day that already trains that muscle as primary. If fixing it would require violating the split → say so and leave the call to the coach.
+**STRICTLY ENFORCED**: Never suggest adding exercises from one muscle group to a day dedicated to a different group.
 
 ### Pesos sugeridos
 After the analysis, output a JSON block with suggested starting weights for each exercise. Base suggestions on his full history using this priority:
