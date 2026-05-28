@@ -1,9 +1,9 @@
 """
-helpers/ai.py — Groq integration for training progression analysis.
+helpers/ai.py — Gemini integration for training progression analysis.
 
 Responsibilities:
   - Transform period data into mode-specific prompts.
-  - Call the LLaMA 3 model via the Groq API with those prompts.
+  - Call Gemini via the google-genai SDK.
   - Return the analysis as a string ready to save.
 
 Available modes:
@@ -26,10 +26,11 @@ from pathlib import Path
 import time
 from datetime import datetime
 
-from groq import Groq
+from google import genai
+from google.genai import types
 
-MODEL         = "llama-3.3-70b-versatile"  # default: 12k TPM
-MODEL_LARGE   = "llama-3.1-8b-instant"     # global analysis: 20k TPM (needed for multi-period prompts)
+MODEL       = "gemini-2.0-flash"  # default: generous free-tier TPM
+MODEL_FAST  = "gemini-2.0-flash"  # catalog classification (same model, different call params)
 
 # Templates are looked up relative to the project root (two levels up from this file).
 # Path(__file__) is the absolute path of this file.
@@ -93,19 +94,18 @@ def _make_system_prompt(goal):
 
 
 
-def _call_groq(client, system_prompt, user_prompt, max_tokens=4096, model=None):
+def _call_gemini(client, system_prompt, user_prompt, max_tokens=4096, model=None):
     """
-    Makes a call to the Groq model and returns the response text.
-    Retries once after 65 seconds if the per-minute rate limit (TPM/413) is hit.
-    If the daily limit (TPD/429) is hit, raises immediately with a clear message.
-    Logs every request and response to logs/groq_YYYYMMDD.log.
+    Makes a call to Gemini and returns the response text.
+    Retries once after 65 seconds if the per-minute rate limit is hit.
+    Logs every request and response to logs/gemini_YYYYMMDD.log.
     """
     used_model = model or MODEL
 
     # ── Logging ──────────────────────────────────────────────────────────────
     log_dir = Path(__file__).parent.parent.parent / "logs"
     log_dir.mkdir(exist_ok=True)
-    log_path = log_dir / f"groq_{datetime.now().strftime('%Y%m%d')}.log"
+    log_path = log_dir / f"gemini_{datetime.now().strftime('%Y%m%d')}.log"
 
     def _log(text):
         with open(log_path, "a", encoding="utf-8") as f:
@@ -122,30 +122,25 @@ def _call_groq(client, system_prompt, user_prompt, max_tokens=4096, model=None):
 
     for attempt in range(2):
         try:
-            response = client.chat.completions.create(
+            response = client.models.generate_content(
                 model=used_model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user",   "content": user_prompt},
-                ],
-                max_tokens=max_tokens,
+                config=types.GenerateContentConfig(
+                    system_instruction=system_prompt,
+                    max_output_tokens=max_tokens,
+                ),
+                contents=user_prompt,
             )
-            result = response.choices[0].message.content
+            result = response.text
             _log(f"--- RESPONSE ({len(result)} chars) ---")
             _log(result)
             return result
         except Exception as e:
             err = str(e)
             _log(f"--- ERROR (attempt {attempt+1}) ---\n{err}")
-            if "413" in err and attempt == 0:
-                print("  Rate limit hit (TPM) — waiting 65s for window to reset...")
+            if ("429" in err or "RESOURCE_EXHAUSTED" in err) and attempt == 0:
+                print("  Rate limit hit — waiting 65s for window to reset...")
                 time.sleep(65)
                 continue
-            if "429" in err:
-                raise RuntimeError(
-                    "Daily token limit reached (100k/day on free tier). "
-                    "Try again tomorrow or upgrade at console.groq.com."
-                ) from e
             raise
 
 
@@ -667,23 +662,23 @@ Yes, overall. 4 out of 6 main exercises improved in weight or reps.
 
 def translate_to_spanish(text, api_key):
     """
-    Translates the given text to Spanish using Groq.
+    Translates the given text to Spanish using Gemini.
 
     Args:
         text:    The text to translate (Markdown analysis).
-        api_key: Groq API key.
+        api_key: Gemini API key.
 
     Returns:
         String with the translated text in Spanish.
     """
-    client = Groq(api_key=api_key)
+    client = genai.Client(api_key=api_key)
     system = (
         "You are a professional translator specializing in Argentine Spanish. "
         "Translate the following text ENTIRELY to Spanish (Argentina). "
         "Every single word must be in Spanish — do not leave any English words or phrases. "
         "Keep markdown formatting intact. Do not add any commentary — only return the translated text."
     )
-    return _call_groq(client, system, text, max_tokens=4096)
+    return _call_gemini(client, system, text, max_tokens=4096)
 
 
 def analyze(periods, api_key, mock=False, mode="global", goal="hipertrofia",
@@ -694,7 +689,7 @@ def analyze(periods, api_key, mock=False, mode="global", goal="hipertrofia",
 
     Args:
         periods:               List of periods (most recent first).
-        api_key:               Groq API key.
+        api_key:               Gemini API key.
         mock:                  If True, returns a test analysis without calling the API.
         mode:                  Analysis mode: 'global', 'new-routine', 'monthly', 'weekly'.
         goal:                  User goal (e.g. 'hypertrophy').
@@ -725,7 +720,7 @@ def analyze(periods, api_key, mock=False, mode="global", goal="hipertrofia",
     else:
         prompt = build_global_prompt(periods, goal)
 
-    client = Groq(api_key=api_key)
+    client = genai.Client(api_key=api_key)
     system = _make_system_prompt(goal)
-    print(f"  Sending [{mode}] prompt to Groq...", flush=True)
-    return _call_groq(client, system, prompt)
+    print(f"  Sending [{mode}] prompt to Gemini...", flush=True)
+    return _call_gemini(client, system, prompt)

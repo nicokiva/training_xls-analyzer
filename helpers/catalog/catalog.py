@@ -6,7 +6,7 @@ Maintains a local JSON file mapping exercise names (normalized) to:
   - secondary muscle groups (indirect volume)
   - movement pattern
 
-Unknown exercises are auto-classified via a fast Groq call (llama-3.1-8b-instant)
+Unknown exercises are auto-classified via Gemini (gemini-2.0-flash)
 and saved so they are never classified twice.
 """
 
@@ -42,12 +42,13 @@ def save_catalog(catalog: dict) -> None:
     )
 
 
-# ── Groq classification ────────────────────────────────────────────────────────
+# ── Gemini classification ──────────────────────────────────────────────────────
 
-def _classify_via_groq(name: str, api_key: str) -> dict:
-    """Ask Groq (fast small model) to classify an exercise. Returns the info dict."""
-    from groq import Groq
-    client = Groq(api_key=api_key)
+def _classify_via_gemini(name: str, api_key: str) -> dict:
+    """Ask Gemini to classify an exercise. Returns the info dict."""
+    from google import genai
+    from google.genai import types
+    client = genai.Client(api_key=api_key)
     prompt = (
         f'Classify this gym exercise: "{name}"\n\n'
         "Respond ONLY with a JSON object, no markdown, no explanation:\n"
@@ -77,13 +78,12 @@ def _classify_via_groq(name: str, api_key: str) -> dict:
         "- Barbell shoulder press ('Empuje de hombros con barra') → primary=hombros, pattern=vertical_push, axial_load=true\n"
         "- Dumbbell/machine shoulder press → primary=hombros, pattern=vertical_push, axial_load=false\n"
     )
-    resp = client.chat.completions.create(
-        model="llama-3.1-8b-instant",
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=120,
-        temperature=0,
+    resp = client.models.generate_content(
+        model="gemini-2.0-flash",
+        config=types.GenerateContentConfig(max_output_tokens=120),
+        contents=prompt,
     )
-    text = resp.choices[0].message.content.strip()
+    text = resp.text.strip()
     # Strip markdown fences if present
     import re
     text = re.sub(r"```json|```", "", text).strip()
@@ -95,7 +95,7 @@ def _classify_via_groq(name: str, api_key: str) -> dict:
 def ensure_classified(exercise_names: list[str], api_key: str) -> dict:
     """
     Ensure every exercise in exercise_names is in the catalog.
-    Unknown exercises are classified via Groq and saved.
+    Unknown exercises are classified via Gemini and saved.
     Returns the (potentially updated) catalog.
     """
     catalog = load_catalog()
@@ -105,7 +105,7 @@ def ensure_classified(exercise_names: list[str], api_key: str) -> dict:
         if key not in catalog:
             print(f"  [catalog] Classifying new exercise: '{name}'...")
             try:
-                info = _classify_via_groq(name, api_key)
+                info = _classify_via_gemini(name, api_key)
                 catalog[key] = {**info, "_original": name}
                 changed = True
                 print(f"  [catalog]   → primary={info.get('primary')}, "

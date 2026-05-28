@@ -343,7 +343,7 @@ def main():
         help="Analysis mode. If omitted, pending events from events.db are consumed instead.")
     parser.add_argument("--sheets-id",      default=os.getenv("SHEETS_ID"))
     parser.add_argument("--credentials",    default=os.getenv("CREDENTIALS"))
-    parser.add_argument("--api-key",        default=os.getenv("GROQ_API_KEY"))
+    parser.add_argument("--api-key",        default=os.getenv("GEMINI_API_KEY"))
     # os.getenv("GOAL", "hypertrophy") reads GOAL from .env, falling back to "hypertrophy"
     parser.add_argument("--goal",           default=os.getenv("GOAL", "hypertrophy"),
         help="Training objective injected into all prompts (default: hypertrophy)")
