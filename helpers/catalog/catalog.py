@@ -129,6 +129,9 @@ def get_axial_load_exercises(exercise_names: list[str], catalog: dict) -> list[s
         if info.get("axial_load"):
             result.append(name)
     return result
+
+
+def calculate_volume(period: dict, catalog: dict) -> dict:
     """
     Calculate weekly sets per muscle group (direct + indirect) for a period.
 

@@ -359,12 +359,17 @@ def build_new_routine_prompt(periods, goal, volume_block=None, axial_load_exerci
     New-routine prompt. periods[0] is the freshly-uploaded routine (no real data yet —
     only the structure is used). periods[1:] is the historical context.
 
+    History is capped at 3 prior periods to stay within the 12k TPM limit.
+    Older periods add minimal signal for weight suggestions — the most recent
+    3 cover all exercises and progression patterns needed.
+
     Also asks the AI to embed a ```json block with weight/rest suggestions so
     write_suggestions_to_sheet() can parse and apply them directly to the sheet.
     """
     new_period    = periods[0]
     routine_block = _format_routine_structure(new_period)
-    history_block = _format_exercise_history_compact(periods[1:]) if len(periods) > 1 else "(no prior history)"
+    prior         = periods[1:4]  # cap at 3 periods — enough signal, fits in 12k TPM
+    history_block = _format_exercise_history_compact(prior) if prior else "(no prior history)"
     vol_block     = volume_block or "(volumen no calculado)"
 
     if axial_load_exercises:
