@@ -54,6 +54,10 @@ _EMAIL_CSS = """
   .sug-table td.comb  { font-weight: bold; color: #7a5c00; }
   .sug-table td.num   { text-align: center; white-space: nowrap; }
   .sug-table td.why   { font-size: 0.80em; color: #555; line-height: 1.4; }
+  .sug-table td.tempo { text-align: center; font-family: monospace; font-size: 0.85em; white-space: nowrap; }
+  .sug-table td.chall { font-size: 0.82em; color: #2c5282; line-height: 1.4; }
+  .sug-table td.rir   { text-align: center; font-size: 0.82em; white-space: nowrap; color: #276749; font-weight: bold; }
+  .sug-table td.prog  { font-size: 0.78em; color: #744210; line-height: 1.4; }
   .sug-table tr:nth-child(even) td { background: #fafafa; }
 </style>
 """

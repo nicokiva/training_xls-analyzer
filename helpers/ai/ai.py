@@ -32,8 +32,8 @@ from google.genai import types
 
 from .models import WeightSuggestion, WeightSuggestionList
 
-MODEL            = "gemini-2.5-flash-lite"   # prose analysis
-MODEL_STRUCTURED = "gemini-2.5-flash-lite"   # structured weight suggestions
+MODEL            = "gemini-2.5-flash"       # prose analysis
+MODEL_STRUCTURED = "gemini-2.5-flash"       # structured weight suggestions
 
 # Templates are looked up relative to the project root (two levels up from this file).
 # Path(__file__) is the absolute path of this file.
@@ -198,10 +198,241 @@ def _normalize_ex_name(name: str) -> str:
     return "".join(c for c in nfkd if not unicodedata.combining(c))
 
 
+# ---------------------------------------------------------------------------
+# Exercise name alias map — canonical name → all known historical variants
+# Canonical = name used in the current/future routines (normalised).
+# All names are stored normalised (lowercase, accent-stripped) at build time.
+# ---------------------------------------------------------------------------
+_EXERCISE_ALIASES_RAW = {
+    # ── Core ─────────────────────────────────────────────────────────────────
+    "Abdominal recto largo (manos atras de la nuca)": [
+        "Abdominal recto largo",
+        "Abdominal recto largo en banco",
+        "Abdominal recto largo en banco isométrico",
+    ],
+    # ── Chest push ───────────────────────────────────────────────────────────
+    "Empuje de pecho con barra en banco plano": [
+        "Press plano con barra",
+        "Press plano con barra (toma cerrada)",
+    ],
+    "Empuje de pecho con barra en banco inclinado": [
+        "Press inclinado con barra",
+        "Press inclinado con barra",
+    ],
+    "Peck Deck (pecho)": [
+        "Peck Deck",
+    ],
+    "Empuje de pecho en Hammer": [
+        "Empuje de pecho en hammer",
+        "Pecho en hammer",
+        "Empuje de pecho en hammer",
+    ],
+    # ── Triceps ──────────────────────────────────────────────────────────────
+    "Triceps con polea (agarre prono)": [
+        "Tríceps con polea (prono)",
+        "Tríceps polea (prono)",
+        "Triceps prono con polea",
+        "Tríceps con polea (agarre prono)",
+    ],
+    # ── Shoulders push ───────────────────────────────────────────────────────
+    "Empuje de hombros con barra (sentado)": [
+        "Press militar parado con barra",
+        "Press de hombros con barra sentado en smith",
+        "Empuje de hombros con barra sentado",
+        "Empuje de hombros con barra parado",
+        "Empuje de hombros con barra sentado",
+    ],
+    "Empuje de hombros con mancuernas": [
+        "Press de hombros con mancuernas",
+        "Empuje de hombros con mancuernas sentado",
+        "Empuje de hombros en mancuerna",
+        "Empuje de hombros con mancuerna",
+    ],
+    "Vuelos laterales con mancuernas": [
+        "Vuelos laterales con mancuerna",
+        "Vuelos laterales con mancuernas (sentado)",
+        "Vuelo lateral con mancuerna",
+        "Vuelos laterales con mancuerna sentado",
+        # NOTE: "Vuelos laterales en polea" intentionally excluded —
+        # cable laterals use different absolute loads than dumbbell laterals.
+    ],
+    # ── Legs ─────────────────────────────────────────────────────────────────
+    "Sentadilla clásica": [
+        "Sentadilla",
+        "Sentadilla clásica profunda",
+        "Sentadilla clásica media",
+    ],
+    "Peso muerto": [
+        "Peso Muerto",
+    ],
+    "Flexión de rodillas en máquina": [
+        "Flexión de rodillas acostado",
+        "Flexión acostado",
+        "Flexión rodillas acostado",
+        "Flexión de rodillas",
+    ],
+    "Estocada en banco (cada pierna)": [
+        "Estocada en banco",
+        "Estocada al frente",
+        "Estocada en multipower (por pierna)",
+    ],
+    "Prensa Hammer 45°": [
+        "Prensa hammer 45°",
+        "Prensa 45°",
+        "Prensa 45",
+        "Empuje de piernas (prensa sentado)",
+    ],
+    "Extensión de rodillas en máquina": [
+        "Extensión de rodillas",
+        "Extensión rodillas en máquina",
+    ],
+    # ── Pull / Back ──────────────────────────────────────────────────────────
+    "Dominada estricta": [
+        "Dominada",
+    ],
+    "Tirón dorsal en polea con agarre supino": [
+        "Tirón dorsal con agarre supino",
+        "Tirón dorsal con agarre prono",
+        "Tirón dorsal en polea agarre neutro",
+        "Tirón dorsal en polea agarre prono",
+        "Tirón dorsal en poleta con agarre prono",
+        "Tirón dorsal con agarre prono",
+        "Tirón dorsal en polea con agarre prono",
+    ],
+    "Biceps con polea": [
+        "Bíceps polea",
+        "Biceps martillo",
+        "Bíceps martillo",
+    ],
+    "Remo al mentón": [
+        "Remo al mentón con polea",
+    ],
+}
+
+def _build_alias_reverse() -> dict:
+    """Returns {normalized_variant: normalized_canonical} reverse lookup."""
+    reverse = {}
+    for canonical, variants in _EXERCISE_ALIASES_RAW.items():
+        norm_canonical = _normalize_ex_name(canonical)
+        for v in variants:
+            reverse[_normalize_ex_name(v)] = norm_canonical
+    return reverse
+
+# Built once at import time
+_ALIAS_REVERSE: dict = {}  # populated lazily on first use
+
+def _canonical_key(name: str) -> str:
+    """
+    Returns the normalised canonical key for an exercise name.
+    If the normalised name is a known alias variant, returns the canonical form.
+    Otherwise returns the normalised name unchanged.
+    """
+    global _ALIAS_REVERSE
+    if not _ALIAS_REVERSE:
+        _ALIAS_REVERSE = _build_alias_reverse()
+    norm = _normalize_ex_name(name)
+    return _ALIAS_REVERSE.get(norm, norm)
+
+
+# ---------------------------------------------------------------------------
+# Movement pattern / biomechanical archetype system
+# ---------------------------------------------------------------------------
+# Each archetype is a (name, [regex patterns]) tuple.
+# Order matters: more specific patterns first.
+_ARCHETYPES = [
+    # Horizontal push — chest
+    ("horizontal_push_flat",    [r"empuje.*pecho.*plano", r"press.*plano", r"press.*bench"]),
+    ("horizontal_push_incline", [r"empuje.*pecho.*inclinado", r"press.*inclinado"]),
+    ("chest_fly",               [r"peck.?deck", r"apertura.*pecho", r"cruce.*polea.*pecho"]),
+    ("horizontal_push_machine", [r"empuje.*pecho.*hammer", r"hammer.*pecho", r"press.*pecho.*maquina"]),
+    # Vertical push — shoulders
+    ("vertical_push",           [r"empuje.*hombros", r"press.*hombros", r"press.*militar", r"overhead.*press"]),
+    # Lateral deltoid
+    ("lateral_delt",            [r"vuelo.*lateral", r"apertura.*lateral", r"lateral.*raise", r"remo.*menton"]),
+    ("rear_delt",               [r"vuelo.*posterior", r"apertura.*posterior", r"face.?pull", r"pajarito"]),
+    # Vertical pull — back
+    ("vertical_pull",           [r"dominada", r"tiron.*dorsal", r"lat.*pulldown", r"polea.*alta"]),
+    # Horizontal pull — back
+    ("horizontal_pull",         [r"remo.*polea", r"remo.*bajo", r"remo.*cable", r"depresor"]),
+    ("row_barbell",             [r"remo.*barra", r"remo.*inclinado"]),
+    # Knee dominant — quads
+    ("squat",                   [r"sentadilla"]),
+    ("leg_press",               [r"prensa.*hammer", r"prensa.*45", r"leg.*press", r"prensa.*pierna"]),
+    ("quad_extension",          [r"extension.*rodilla"]),
+    ("lunge",                   [r"estocada", r"zancada", r"split.*squat", r"bulgarian"]),
+    # Hip dominant — posterior
+    ("deadlift",                [r"peso.*muerto"]),
+    ("leg_curl",                [r"flexion.*rodilla", r"curl.*femoral", r"isquio"]),
+    ("hip_extension",           [r"extension.*cadera", r"hip.*thrust", r"patada.*glute"]),
+    # Arms
+    ("triceps",                 [r"tricep"]),
+    ("biceps",                  [r"bicep", r"curl"]),
+    # Core
+    ("core_flexion",            [r"abdominal", r"crunch"]),
+    ("core_rotation",           [r"rotacion.*disco", r"giro"]),
+]
+
+# Equipment categories for transfer factor calculation
+_EQUIPMENT_PATTERNS = [
+    ("barbell",    [r"\bbarra\b", r"con barra", r"barra libre"]),
+    ("dumbbell",   [r"mancuerna"]),
+    ("machine",    [r"hammer", r"maquina", r"polea", r"en banco", r"peck.?deck",
+                    r"extension.*rodilla", r"flexion.*rodilla", r"prensa"]),
+    ("cable",      [r"polea", r"cable"]),
+    ("bodyweight", [r"dominada", r"estocada", r"fondo", r"plancha"]),
+]
+
+# Transfer factors: (src_equipment, dst_equipment) → factor to apply to src weight
+_TRANSFER_FACTORS = {
+    ("barbell",    "barbell"):    1.00,
+    ("barbell",    "dumbbell"):   0.90,
+    ("barbell",    "machine"):    0.90,
+    ("dumbbell",   "barbell"):    1.10,
+    ("dumbbell",   "dumbbell"):   1.00,
+    ("dumbbell",   "machine"):    0.95,
+    ("machine",    "machine"):    1.00,
+    ("machine",    "barbell"):    1.10,
+    ("machine",    "dumbbell"):   1.05,
+    ("cable",      "cable"):      1.00,
+    ("cable",      "machine"):    1.00,
+    ("machine",    "cable"):      1.00,
+}
+
+
+def _get_archetype(name: str) -> "str | None":
+    """Returns the archetype name for an exercise, or None if unclassified."""
+    import re
+    n = _normalize_ex_name(name)
+    for archetype, patterns in _ARCHETYPES:
+        for pat in patterns:
+            if re.search(pat, n):
+                return archetype
+    return None
+
+
+def _get_equipment(name: str) -> str:
+    """Returns the equipment type for an exercise."""
+    import re
+    n = _normalize_ex_name(name)
+    for equip, patterns in _EQUIPMENT_PATTERNS:
+        for pat in patterns:
+            if re.search(pat, n):
+                return equip
+    return "machine"  # default fallback
+
+
+def _transfer_factor(src_name: str, dst_name: str) -> float:
+    """Transfer factor to apply to src_weight when dst exercise is different equipment."""
+    src_eq = _get_equipment(src_name)
+    dst_eq = _get_equipment(dst_name)
+    return _TRANSFER_FACTORS.get((src_eq, dst_eq), 0.90)
+
+
 def _compute_settled_weights(new_period: dict, prior_periods: list) -> str:
     """
     For each exercise in new_period, find its most recent settled weight from
-    prior_periods using normalized (case-insensitive, accent-stripped) name matching.
+    prior_periods using normalized name matching, with biomechanical pattern
+    fallback when no exact name match exists.
 
     Shows the most recent entry AND (if it has fewer than 3 weeks of data) also
     the most complete entry so the AI has reliable baselines when a recent period
@@ -215,7 +446,8 @@ def _compute_settled_weights(new_period: dict, prior_periods: list) -> str:
     def strip_parens(s):
         return re.sub(r"\s*\(.*?\)", "", s).strip()
 
-    # Build lookup: normalized_name → [(period_label, settled, n_weeks, is_comb)]
+    # Build lookup: (normalized_name, is_comb) → [(period_label, settled, n_weeks, is_comb)]
+    # Keying by is_comb ensures isolated and combined weights are never cross-compared.
     # ordered from most recent (prior_periods[0]) to oldest
     lookup: dict = {}
     for period_data in prior_periods:
@@ -225,67 +457,144 @@ def _compute_settled_weights(new_period: dict, prior_periods: list) -> str:
                 n_weeks, settled = _last_settled_weeks(ex)
                 if settled is None:
                     continue
-                key  = _normalize_ex_name(strip_parens(ex["name"]))
+                raw_key   = _normalize_ex_name(strip_parens(ex["name"]))
+                canon_key = _canonical_key(ex["name"])
                 is_c = ex.get("is_comb", False)
-                lookup.setdefault(key, []).append(
-                    (period_label, settled, n_weeks, is_c)
-                )
+                entry = (period_label, settled, n_weeks, is_c)
+                lookup.setdefault((raw_key, is_c), []).append(entry)
+                if canon_key != raw_key:
+                    lookup.setdefault((canon_key, is_c), []).append(entry)
 
     lines = ["Pesos de cierre por ejercicio (calculados por el script — usar como baseline):"]
     for day_data in new_period["days"]:
-        day_num = day_data["day"]
-        for ex in day_data["exercises"]:
-            key = _normalize_ex_name(strip_parens(ex["name"]))
-            entries = lookup.get(key)
-            if not entries:
-                lines.append(f"  D{day_num} {ex['name']}: sin historial previo")
-                continue
+        day_num  = day_data["day"]
+        n_in_day = len(day_data["exercises"])
+        for pos, ex in enumerate(day_data["exercises"], start=1):
+            raw_key   = _normalize_ex_name(strip_parens(ex["name"]))
+            canon_key = _canonical_key(ex["name"])
+            new_is_c  = ex.get("is_comb", False)
+            pos_note  = f" [#{pos}/{n_in_day} del día]"
+            # Try canonical key first (alias resolution), then raw key — always same is_comb
+            entries = lookup.get((canon_key, new_is_c)) or lookup.get((raw_key, new_is_c))
+            key = canon_key  # used for partial/archetype fallback below
 
-            most_recent = entries[0]
-            p_label, settled, n_weeks, is_c = most_recent
-            comb_note = " (era combinado)" if is_c else ""
-            weeks_note = f" [{n_weeks} semanas de datos]"
-            line = (f"  D{day_num} {ex['name']}: {p_label} → {settled:.1f} kg"
-                    f"{comb_note}{weeks_note}")
+            if entries:
+                # ── Exact name match ──────────────────────────────────────────
+                most_recent = entries[0]
+                p_label, settled, n_weeks, is_c = most_recent
+                comb_note  = " (era combinado)" if is_c else ""
+                weeks_note = f" [{n_weeks} semanas de datos]"
+                line = (f"  D{day_num} {ex['name']}{pos_note}: {p_label} → {settled:.1f} kg"
+                        f"{comb_note}{weeks_note}")
 
-            # If most recent is sparse (<3 weeks), also show the most complete entry
-            if n_weeks < 3 and len(entries) > 1:
-                best = max(entries[1:], key=lambda e: e[2])
-                if best[2] > n_weeks:
-                    b_label, b_settled, b_weeks, b_comb = best
-                    b_comb_note = " (era combinado)" if b_comb else ""
-                    line += (f" | referencia más completa: {b_label} → "
-                             f"{b_settled:.1f} kg [{b_weeks} semanas]{b_comb_note}")
-            lines.append(line)
+                # If most recent is sparse (<3 weeks), also show the most complete entry
+                if n_weeks < 3 and len(entries) > 1:
+                    best = max(entries[1:], key=lambda e: e[2])
+                    if best[2] > n_weeks:
+                        b_label, b_settled, b_weeks, b_comb = best
+                        b_comb_note = " (era combinado)" if b_comb else ""
+                        line += (f" | referencia más completa: {b_label} → "
+                                 f"{b_settled:.1f} kg [{b_weeks} semanas]{b_comb_note}")
+                lines.append(line)
+
+            else:
+                # ── Partial name match (e.g. "Dominada" matches "Dominada estricta") ──
+                partial_entries = None
+                for (hist_key, hist_is_c), hist_entries in lookup.items():
+                    if hist_is_c == new_is_c and (key.startswith(hist_key) or hist_key.startswith(key)):
+                        partial_entries = hist_entries
+                        break
+
+                if partial_entries:
+                    most_recent = partial_entries[0]
+                    p_label, settled, n_weeks, is_c = most_recent
+                    comb_note  = " (era combinado)" if is_c else ""
+                    weeks_note = f" [{n_weeks} semanas de datos]"
+                    line = (f"  D{day_num} {ex['name']}{pos_note}: {p_label} → {settled:.1f} kg"
+                            f"{comb_note}{weeks_note}")
+                    if n_weeks < 3 and len(partial_entries) > 1:
+                        best = max(partial_entries[1:], key=lambda e: e[2])
+                        if best[2] > n_weeks:
+                            b_label, b_settled, b_weeks, b_comb = best
+                            b_comb_note = " (era combinado)" if b_comb else ""
+                            line += (f" | referencia más completa: {b_label} → "
+                                     f"{b_settled:.1f} kg [{b_weeks} semanas]{b_comb_note}")
+                    lines.append(line)
+
+                else:
+                    # ── Biomechanical pattern fallback ────────────────────────
+                    archetype = _get_archetype(ex["name"])
+                    best_match = None  # (period_label, src_name, adjusted_weight, n_weeks, factor)
+
+                    if archetype:
+                        for (hist_key, hist_is_c), hist_entries in lookup.items():
+                            if hist_is_c != new_is_c:
+                                continue  # never cross isolated ↔ combined
+                            if _get_archetype(hist_key) == archetype:
+                                candidate = hist_entries[0]
+                                p_label, settled, n_weeks, _ = candidate
+                                factor = _transfer_factor(hist_key, ex["name"])
+                                adjusted = round(settled * factor / 2.5) * 2.5
+                                if best_match is None or n_weeks > best_match[3]:
+                                    best_match = (p_label, hist_key, adjusted, n_weeks, factor)
+
+                    if best_match:
+                        p_label, src_name, adjusted, n_weeks, factor = best_match
+                        lines.append(
+                            f"  D{day_num} {ex['name']}{pos_note}: sin historial exacto → "
+                            f"ejercicio equiv. '{src_name}' ({p_label}) "
+                            f"→ baseline ajustado {adjusted:.1f} kg [{n_weeks} semanas de datos]"
+                        )
+                    else:
+                        lines.append(f"  D{day_num} {ex['name']}{pos_note}: sin historial previo (ejercicio nuevo sin equivalente)")
     return "\n".join(lines)
 
 def get_settled_weights_dict(new_period: dict, prior_periods: list) -> dict:
     """
-    Returns a dict of normalized exercise name → settled peso (float) for use
-    in post-processing validation of AI suggestions.
+    Returns a dict of normalised canonical exercise name → settled peso (float)
+    for use in post-processing validation of AI suggestions.
 
-    Uses the most complete entry (most weeks of data) as the reference weight,
-    regardless of recency — this gives the most reliable baseline.
+    Iterates from most recent to oldest period. Keeps the most recent entry with
+    ≥2 weeks of data; falls back to any entry if none has ≥2 weeks. Canonical
+    alias keys are used so all name variants collapse to the same baseline.
     """
     import re
 
     def strip_parens(s):
         return re.sub(r"\s*\(.*?\)", "", s).strip()
 
-    # Build lookup: normalized_name → best settled (most weeks)
+    # lookup: (canonical_key, is_comb) → (n_weeks, settled, period_index)
+    # Keying by is_comb ensures isolated and combined weights are never cross-compared.
+    # period_index 0 = most recent prior period
     lookup: dict = {}
-    for period_data in prior_periods:
+    for period_idx, period_data in enumerate(prior_periods):
         for day_data in period_data["days"]:
             for ex in day_data["exercises"]:
                 n_weeks, settled = _last_settled_weeks(ex)
                 if settled is None:
                     continue
-                key = _normalize_ex_name(strip_parens(ex["name"]))
-                prev_n, _ = lookup.get(key, (0, 0))
-                if n_weeks > prev_n:
-                    lookup[key] = (n_weeks, settled)
+                canon_key = _canonical_key(ex["name"])
+                is_c = ex.get("is_comb", False)
+                lkey = (canon_key, is_c)
+                existing = lookup.get(lkey)
+                if existing is None:
+                    lookup[lkey] = (n_weeks, settled, period_idx)
+                else:
+                    prev_weeks, prev_settled, prev_idx = existing
+                    if period_idx < prev_idx and n_weeks >= 2:
+                        lookup[lkey] = (n_weeks, settled, period_idx)
+                    elif n_weeks > prev_weeks and prev_idx == period_idx:
+                        lookup[lkey] = (n_weeks, settled, period_idx)
 
-    return {k: v[1] for k, v in lookup.items()}
+    # Resolve each new exercise using its own is_comb flag
+    result = {}
+    for ex_data in (ex for d in new_period["days"] for ex in d["exercises"]):
+        canon_key = _canonical_key(ex_data["name"])
+        is_c = ex_data.get("is_comb", False)
+        entry = lookup.get((canon_key, is_c))
+        if entry:
+            result[canon_key] = entry[1]
+    return result
 
 
 def _format_exercise_history_compact(periods):
@@ -297,21 +606,21 @@ def _format_exercise_history_compact(periods):
     When the same exercise appears multiple times within a period (e.g. abdomen
     repeats across all 4 days), only the RICHEST occurrence is kept — the one
     with the most weeks of data, breaking ties by highest settled weight. This
-    avoids confusing the AI with contradictory entries like "ORIG1:12kg | ORIG1:5kg".
+    avoids confusing the AI with contradictory entries like "D1:12kg | D3:5kg".
 
     Exercises are keyed by (name, is_comb) so a press done in a triserie and the
     same press done in isolation are treated as separate series — their weights are
     not directly comparable and must never be merged onto the same history line.
     """
     ordered = list(reversed(periods))
-    # best_per_period[(period, name, is_comb)] = (num_weeks, settled, ex_note, set_notes)
+    # best_per_period[(period, canonical_name, is_comb)] = (num_weeks, settled, ex_note, set_notes)
     best_per_period = {}
 
     for period_data in ordered:
         period = period_data["period"]
         for day_data in period_data["days"]:
             for ex in day_data["exercises"]:
-                name    = ex["name"]
+                canon   = _canonical_key(ex["name"])
                 is_comb = ex.get("is_comb", False)
                 n_weeks, settled = _last_settled_weeks(ex)
                 if settled is None:
@@ -323,23 +632,23 @@ def _format_exercise_history_compact(periods):
                     for s in w["series"]
                     if s.get("note")
                 ]
-                key = (period, name, is_comb)
+                key = (period, canon, is_comb)
                 prev = best_per_period.get(key)
                 prev_n = prev[0] if prev else 0
                 prev_s = prev[1] if prev else 0
                 if n_weeks > prev_n or (n_weeks == prev_n and settled > prev_s):
                     best_per_period[key] = (n_weeks, settled, ex_note, set_notes)
 
-    # Rebuild ordered entries: (name, is_comb) → list of (period, settled, ex_note, set_notes)
+    # Rebuild ordered entries: (canonical_name, is_comb) → list of (period, settled, ex_note, set_notes)
     exercise_entries = {}
-    for (period, name, is_comb), (_, settled, ex_note, set_notes) in best_per_period.items():
-        exercise_entries.setdefault((name, is_comb), []).append(
+    for (period, canon, is_comb), (_, settled, ex_note, set_notes) in best_per_period.items():
+        exercise_entries.setdefault((canon, is_comb), []).append(
             (period, settled, ex_note, set_notes)
         )
 
     lines = []
-    for (name, is_comb), period_entries in exercise_entries.items():
-        label = f"**{name}**" + (" *(combinado)*" if is_comb else "")
+    for (canon, is_comb), period_entries in exercise_entries.items():
+        label = f"**{canon}**" + (" *(combinado)*" if is_comb else "")
         parts = [f"{p[:5]}:{s:.1f}kg" for p, s, _, __ in period_entries]
         line = f"{label}: {' | '.join(parts)}"
         # Append any notes collected for this exercise across periods
@@ -412,11 +721,13 @@ def _format_routine_structure(period):
     Useful for new-routine where the tab doesn't have reps/weights loaded yet.
     Includes target sets × reps from the PDF-parsed data (week 1, rep column).
     Combined exercises are marked with (combinado).
+    Position within the day is shown (#1, #2, …) so the AI can account for
+    accumulated fatigue when suggesting weights.
     """
     lines = []
     for day in period["days"]:
         lines.append(f"Day {day['day']}:")
-        for ex in day["exercises"]:
+        for pos, ex in enumerate(day["exercises"], start=1):
             label = ex['name'] + (" (combinado)" if ex.get("is_comb") else "")
             # Extract target reps from week 1 (coach-prescribed, same every week)
             target_reps = None
@@ -428,7 +739,7 @@ def _format_routine_structure(period):
                     unique_reps = list(dict.fromkeys(rep_values))
                     target_reps = f"{n_sets}x{'/'.join(unique_reps)}"
             suffix = f" [{target_reps}]" if target_reps else ""
-            lines.append(f"  - {label}{suffix}")
+            lines.append(f"  #{pos} {label}{suffix}")
         lines.append("")
     return "\n".join(lines)
 
@@ -723,10 +1034,16 @@ def get_weight_suggestions(
 
     client = genai.Client(api_key=api_key)
     system = (
-        "Sos un entrenador de Powerbuilding de élite. "
+        "Sos un entrenador de Powerbuilding de élite y analista de rendimiento deportivo. "
         "Analizás números con frialdad matemática. "
         "Hablás con voseo argentino. "
-        "Seguís las reglas del prompt al pie de la letra."
+        "Seguís las reglas del prompt al pie de la letra. "
+        "Antes de calcular cualquier peso, rastreás el ejercicio en TODO el historial cronológico provisto "
+        "para identificar la tendencia real de carga. "
+        "Si el rango de repeticiones cambió entre períodos, aplicás estimación de 1RM submáxima "
+        "(fórmula: peso × (1 + reps/30)) para adaptar el peso al nuevo rango. "
+        "Si hay notas de dolor o molestia en el historial de un ejercicio, penalizás el peso sugerido un 10% "
+        "e indicás la advertencia en el campo 'progression_analysis'."
     )
 
     log_dir  = Path(__file__).parent.parent.parent / "logs"
@@ -834,4 +1151,4 @@ def analyze(periods, api_key, mock=False, mode="global", goal="hipertrofia",
     client = genai.Client(api_key=api_key)
     system = _make_system_prompt(goal)
     print(f"  Sending [{mode}] prompt to Gemini...", flush=True)
-    return _call_gemini(client, system, prompt)
+    return _call_gemini(client, system, prompt, max_tokens=16384)

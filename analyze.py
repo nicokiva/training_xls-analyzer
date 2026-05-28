@@ -294,7 +294,6 @@ def run_analysis(mode, args, service, periods, periods_override=None, return_onl
             # Validate against pre-calculated baselines (safety net for outliers)
             settled_dict = get_settled_weights_dict(target_period, prior_for_suggestions)
             suggestions = validate_suggestions(suggestions, settled_dict)
-            # Find the active non-ORIG tab to write to (never touch ORIG backups).
             import re as _re
             active_tab = next(
                 (p["period"] for p in periods
@@ -304,9 +303,9 @@ def run_analysis(mode, args, service, periods, periods_override=None, return_onl
             if active_tab:
                 print(f"[new-routine] Writing {len(suggestions)} weight suggestion(s) to '{active_tab}'...")
                 write_service = get_write_service(args.credentials)
-                write_suggestions_to_sheet(write_service, args.sheets_id, active_tab, suggestions)
+                write_suggestions_to_sheet(write_service, args.sheets_id, active_tab, suggestions, overwrite_italic=True)
             else:
-                print("[new-routine] No active non-ORIG tab found — skipping sheet write.")
+                print("[new-routine] No active tab found — skipping sheet write.")
             analysis += format_suggestions_for_email(suggestions)
         else:
             print("[new-routine] Structured call returned no suggestions.")

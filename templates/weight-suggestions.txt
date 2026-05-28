@@ -16,20 +16,49 @@ Nicolás starts period {period}. Goal: {goal}.
 
 ## RULES — read before generating any number
 
-**WEIGHTS**
-1. For every exercise that appears in the settled weights block above → use that weight as W1 baseline, adjusted only for combined/isolated context change.
-2. Combined execution (superserie) causes accumulated fatigue → expect 10–20% less than the isolated baseline. If it was combined before and is now isolated, the inverse applies.
-3. If an exercise has no settled weight → estimate from a similar movement pattern in the settled block, state it in "reason".
-4. W1 should start 2.5–5 kg below the settled baseline to create a 4-week ramp. W2–W4 progress linearly.
-5. Bodyweight exercises → weeks = [0, 0, 0, 0].
+**WEIGHTS — LOAD CONTINUITY ALGORITHM**
+For every exercise, follow this decision tree in order:
+
+1. **Exact match in settled weights block** → Use that weight as the W4 ceiling. Back-calculate W1 and W2 linearly (drop ~2.5–5% per week going backwards). W3/W4 should land near or at the settled baseline.
+2. **New free-weight/barbell exercise (no history), but mechanically equivalent exists** → Apply a **20% stabilization penalty** to the equivalent's settled weight for W1. Example: new "Press militar parado" vs. history "Press hombros en Smith" → W1 = Smith baseline × 0.80.
+3. **New machine/isolation exercise (no equivalent)** → Estimate a conservative high-RIR starting load, flag it as a baseline week in `progression_analysis`.
+4. **Combined execution (superserie)** → Accumulated fatigue causes 10–20% less output vs. isolated. If it was combined before and is now isolated, apply the inverse.
+5. **Bodyweight exercises** → weeks = [0, 0, 0, 0].
+
+**TEMPO & TUT ADJUSTMENT**
+- Default: `"Controlado"` for compound/axial movements (Sentadilla, Peso muerto, Remo).
+- Arms and lateral deltoids (Tríceps polea, Bíceps cualquier variante, Vuelos laterales/posteriores): mandatory **`"4-0-1-0"`** (4s eccentric, 0 transition, 1s concentric, 0 pause). **IMPORTANT:** if this exercise has prior history, reduce W1 by 10–15% vs. settled weight to compensate for the massive increase in Time Under Tension.
+- Machine chest/back: `"3-0-1-0"`.
+- Format is always `"E-P-C-P"` or `"Controlado"`.
 
 **SAFETY (axial load)**
-For every exercise listed under "Axial load exercises" above: keep RIR 1-2. Never push these to maximum load.
+For every exercise listed under "Axial load exercises" above: strict RIR 1-2 in W4. NEVER prescribe RIR 0, Drop Sets, or absolute failure. Tempo must remain `"Controlado"`.
+
+**RIR_W4**
+- Axial/free barbell (Sentadilla, Peso muerto, Press con barra plano/inclinado, Press hombros con barra): `"RIR 1-2"` always.
+- Guided machines (Peck Deck, Extensión rodillas, Flexión rodillas, Hammer): `"RIR 0 (fallo técnico)"`.
+- Isolation pulleys (Tríceps polea, Bíceps polea, Depresores): `"RIR 0 + Drop Set"`.
+- Abdomen: `"RIR 1"`.
 
 **REST (rest_s)**
 - Each `rest_s` must be a plain integer or null. Never a string.
-- Combined/superset group: set `rest_s` ONLY on the LAST exercise of the group. All others in the same group must be null.
+- Combined/superset group: set `rest_s` ONLY on the LAST exercise of the group. All others must be null.
 - The abdomen group (Abdominal recto largo, Rotaciones de pie con disco, Extensión de cadera en banco) appears at the start of every day as a combined group: rest_s = null on the first two, rest_s = 90 on Extensión de cadera en banco.
+- Abdomen loads must progress via micro-loads (0.5–1 kg/week) or stay flat — never aggressive jumps. This prevents CNS fatigue before the main heavy lifts.
+
+**CHALLENGE**
+- Write one specific, measurable challenge per exercise for the 4-week block.
+- Isolation/machine exercises (Peck Deck, Tríceps polea, Bíceps polea, Extensión rodillas, Depresores, Vuelos laterales): MUST be `"Drop Set en la última serie de W4: bajar 20% del peso inmediatamente tras fallo técnico y empujar al fallo de nuevo."`.
+- Axial/barbell exercises: technique or volume-based only (e.g. "Completar todas las series con RIR 1 limpio", "Alcanzar W4 sin pérdida de técnica").
+- Abdomen combined group: `"Completar el triset sin pausa extra durante todo el bloque"`.
+- If nothing notable: `"Consolidar técnica y ramp progresivo"`.
+
+**PROGRESSION ANALYSIS**
+- Before assigning any weight, scan ALL periods in the history for this exercise.
+- Identify the trend: ascending / stagnant / descending, and cite the data (e.g. "W4 del 03/26: 67.5kg × 6 reps").
+- If rep range changed between periods, apply 1RM estimation: `1RM ≈ weight × (1 + reps/30)`, then derive the new target weight for the new rep range.
+- If the exercise is new, state the equivalent used and the transfer factor applied.
+- If any period has pain/injury notes for this movement, reduce W1 by 10% and flag it explicitly.
 
 **COMPLETENESS**
 - Include EVERY exercise from the routine above — no exceptions, no truncations.

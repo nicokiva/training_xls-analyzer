@@ -42,7 +42,14 @@ Si no hay evidencia de tolerancia técnica en el historial → no prescribís el
 
 ---
 
-Write two sections in Spanish:
+Write two sections in Spanish. **FORMAT RULE**: The exercise-by-exercise sections must use this structure exactly — NO "D1 Ejercicio:" style:
+
+**Día 1**
+- **Ejercicio**: comentario concreto con número.
+- **Ejercicio**: comentario concreto con número.
+
+**Día 2**
+- **Ejercicio**: ...
 
 ### Cómo usar esta rutina para crecer
 
@@ -51,11 +58,17 @@ For each exercise in this new routine, look up its actual week-by-week progressi
 If an exercise has no history → say so, state which reference you're using, and recommend starting at RIR 2 conservador.
 Do NOT write any progression logic that isn't directly traceable to a specific data point in the history above.
 
+**FATIGUE RULE**: The routine structure shows each exercise's position in the day (#1, #2, …). Exercises later in the day accumulate fatigue from prior exercises. When suggesting weights for exercises in positions #4 or later, explicitly account for this: a weight that's achievable fresh may be 10–20% lower after 3+ prior exercises. Never compare a late-day exercise to its isolated fresh benchmark without acknowledging this.
+
+**COMBINED vs ISOLATED RULE**: If the history has the same exercise both with and without *(combinado)* label, those are DIFFERENT execution contexts with incomparable weights. Only compare isolated→isolated and combined→combined. Never say "regresión" across contexts.
+
 **2. Drop sets: historial y prescripción**
-Scan the history for drop sets (same exercise, same week, decreasing weights across series). For each one found:
+IMPORTANT: Only scan for drop sets in exercises that appear in the NEW routine above. Ignore any drop set history for exercises that are NOT in this routine — do not mention them at all.
+For each drop set found in a current-routine exercise:
 - Quote the exact weights (period + week).
 - Note if the exercise is now combined or isolated in this new routine, and adjust accordingly.
 - Apply Regla 3: if eligible (cable/machine, history shows tolerance) → prescribe the drop for week 4, last set, with exact weights. If not eligible → do not prescribe it.
+If no exercises in the current routine have drop set history → skip this subsection entirely.
 
 **3. Margen vs. fallo: ejercicio por ejercicio**
 For each exercise, check the last week of the most recent period: did the series weights stay flat (margin) or drop (near failure)? Report it concretely per exercise with actual numbers. Apply Regla 2 for axial load exercises — always conclude with RIR 1-2, regardless of what the data shows.
@@ -68,4 +81,11 @@ The following volume was calculated directly from the coach's routine by the scr
 State whether each muscle group is sufficient for hypertrophy (~10–20 direct sets/week). Flag anything below 6 direct sets/week as critically low, paying special attention to muscles relevant to {goal}.
 If a muscle is low, suggest ONE fix: an existing exercise that could add a set, on a day that already trains that muscle as primary. If fixing it would require violating the split → say so and leave the call to the coach.
 **STRICTLY ENFORCED**: Never suggest adding exercises from one muscle group to a day dedicated to a different group.
+
+**5. Sugerencias proactivas**
+If you see a real opportunity to improve results — based on the data — propose it here. This can include:
+- Adding an exercise to a day that's short or has a muscle gap (respecting the split).
+- Increasing reps on a specific exercise if the weight history shows it's been too easy.
+- A technique change (e.g. adding a pause rep, slowing the eccentric) that would increase stimulus without adding load.
+Each suggestion must cite the specific data point that motivates it. If you have no concrete suggestion → omit this section entirely.
 

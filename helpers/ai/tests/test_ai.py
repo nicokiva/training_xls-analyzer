@@ -102,8 +102,9 @@ class TestBuildGlobalPrompt:
 
     def test_contains_exercise_names(self):
         prompt = build_global_prompt([PERIOD_A], goal="fuerza")
-        assert "Sentadilla" in prompt
-        assert "Press plano" in prompt
+        # Names appear as canonical keys in the history block (lowercased, alias-resolved)
+        assert "sentadilla" in prompt.lower()
+        assert "press plano" in prompt.lower() or "empuje de pecho" in prompt.lower()
 
     def test_is_string(self):
         prompt = build_global_prompt([PERIOD_A], goal="test")

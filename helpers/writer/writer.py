@@ -21,6 +21,7 @@ import re
 import unicodedata
 
 from helpers.reader.reader import N_WEEKS, N_SERIES
+from helpers.ai.ai import _canonical_key
 
 # Col Z (0-based index 25): suggested rest time per exercise / combined group
 PAUSA_COL = N_WEEKS * N_SERIES * 2 + 1  # = 25
@@ -100,20 +101,16 @@ def validate_suggestions(suggestions, settled_weights):
         if ai_w1 == 0:
             continue  # bodyweight — skip
 
-        key = _norm(name)
-        # Fuzzy match: accept if key starts with or contains the settled key
-        baseline = None
-        for skey, sval in settled_weights.items():
-            if key == skey or key.startswith(skey) or skey.startswith(key):
-                baseline = sval
-                break
+        # Use canonical key so it matches the keys in settled_weights dict
+        key = _canonical_key(name)
+        baseline = settled_weights.get(key)
 
         if baseline is None or baseline == 0:
             continue
 
         ratio = ai_w1 / baseline
-        if ratio < 0.6 or ratio > 1.4:
-            # AI is off by more than 40% — override with baseline
+        if ratio < 0.6:
+            # AI is more than 40% below baseline — likely hallucinating a low weight, override
             print(f"  [validate] Correcting '{name}': AI={ai_w1:.1f}kg vs "
                   f"baseline={baseline:.1f}kg (ratio={ratio:.2f}) → overriding")
             # Preserve progression: add AI-style increments to the correct base
@@ -153,24 +150,23 @@ def _peso_col(week_idx, set_idx):
     return 1 + week_idx * (N_SERIES * 2) + set_idx * 2 + 1
 
 
-def write_suggestions_to_sheet(service, spreadsheet_id, tab_name, suggestions):
+def write_suggestions_to_sheet(service, spreadsheet_id, tab_name, suggestions, overwrite_italic=False):
     """
     Writes suggested peso values to empty peso cells in the tab, formatted as italic.
 
     Only writes to cells that are currently empty — never overwrites actual training data.
+    When overwrite_italic=True (new-routine mode), also overwrites cells that already
+    contain values, since any existing values there are previous AI suggestions (italic),
+    not real training data.
 
     Args:
-        service:        Google Sheets API client with write scope.
-        spreadsheet_id: ID of the spreadsheet.
-        tab_name:       Name of the tab (e.g. "ORIG18/05/26-...").
-        suggestions:    List of dicts from parse_suggestions().
+        service:          Google Sheets API client with write scope.
+        spreadsheet_id:   ID of the spreadsheet.
+        tab_name:         Name of the tab (e.g. "01/06/26-...").
+        suggestions:      List of dicts from parse_suggestions().
+        overwrite_italic: If True, overwrite existing cell values (new-routine re-runs).
     """
     if not suggestions:
-        return
-
-    # Safety guard: NEVER write to ORIG-prefixed tabs (they are read-only backups).
-    if tab_name.startswith("ORIG"):
-        print(f"  [writer] Refusing to write to ORIG tab '{tab_name}'. Aborting.")
         return
 
     # --- Get sheet numeric ID (needed for formatting requests) ---
@@ -273,7 +269,7 @@ def write_suggestions_to_sheet(service, spreadsheet_id, tab_name, suggestions):
             for set_idx in range(N_SERIES):
                 col = _peso_col(week_idx, set_idx)
                 existing = row[col].strip() if col < len(row) else ""
-                if existing:
+                if existing and not overwrite_italic:
                     continue
 
                 col_letter = _col_letter(col)
@@ -308,7 +304,7 @@ def write_suggestions_to_sheet(service, spreadsheet_id, tab_name, suggestions):
                 pausa_row = comb_group_first.get(row_idx, row_idx) if is_comb else row_idx
                 pausa_src_row = rows[pausa_row] if pausa_row < len(rows) else []
                 existing_z = pausa_src_row[PAUSA_COL].strip() if PAUSA_COL < len(pausa_src_row) else ""
-                if not existing_z:
+                if not existing_z or overwrite_italic:
                     cell_z = f"'{tab_name}'!{_col_letter(PAUSA_COL)}{pausa_row + 1}"
                     value_updates.append({"range": cell_z, "values": [[f"{rest_s}s"]]})
                     format_requests.append({
@@ -385,6 +381,10 @@ def format_suggestions_for_email(suggestions):
             "<th>Ejercicio</th>"
             "<th>Sem 1</th><th>Sem 2</th><th>Sem 3</th><th>Sem 4</th>"
             "<th>Pausa</th>"
+            "<th>Tempo</th>"
+            "<th>RIR W4</th>"
+            "<th>Desafío del mes</th>"
+            "<th>Progresión histórica</th>"
             "<th>Por qué</th>"
             "</tr></thead><tbody>"
         )
@@ -394,6 +394,10 @@ def format_suggestions_for_email(suggestions):
             weeks   = s.get("weeks", [None] * 4)
             rest_s  = s.get("rest_s")
             reason  = s.get("reason", "")
+            tempo   = s.get("tempo", "Controlado")
+            challenge = s.get("challenge", "")
+            rir_w4    = s.get("rir_w4", "")
+            progression = s.get("progression_analysis", "")
 
             w = [(f"{v} kg" if v is not None else "—") for v in weeks]
             rest_str = f"{rest_s}s" if rest_s else "—"
@@ -408,6 +412,10 @@ def format_suggestions_for_email(suggestions):
                 f'<td class="num">{w[2]}</td>'
                 f'<td class="num">{w[3]}</td>'
                 f'<td class="num">{rest_str}</td>'
+                f'<td class="tempo">{tempo}</td>'
+                f'<td class="rir">{rir_w4}</td>'
+                f'<td class="chall">{challenge}</td>'
+                f'<td class="prog">{progression}</td>'
                 f'<td class="why">{reason}</td>'
                 f"</tr>"
             )

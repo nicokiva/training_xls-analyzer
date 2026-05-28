@@ -416,6 +416,8 @@ def load_all_periods(service, spreadsheet_id):
     tabs = list_tabs(service, spreadsheet_id)
     periods = []
     for tab in tabs:
+        if tab.upper().startswith("ORIG"):
+            continue
         rows              = read_tab(service, spreadsheet_id, tab)
         notes, italic_cells = read_tab_metadata(service, spreadsheet_id, tab)
         days              = parse_tab(rows, notes=notes, italic_cells=italic_cells)
