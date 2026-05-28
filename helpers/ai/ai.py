@@ -261,6 +261,35 @@ def _compute_settled_weights(new_period: dict, prior_periods: list) -> str:
             lines.append(line)
     return "\n".join(lines)
 
+def get_settled_weights_dict(new_period: dict, prior_periods: list) -> dict:
+    """
+    Returns a dict of normalized exercise name → settled peso (float) for use
+    in post-processing validation of AI suggestions.
+
+    Uses the most complete entry (most weeks of data) as the reference weight,
+    regardless of recency — this gives the most reliable baseline.
+    """
+    import re
+
+    def strip_parens(s):
+        return re.sub(r"\s*\(.*?\)", "", s).strip()
+
+    # Build lookup: normalized_name → best settled (most weeks)
+    lookup: dict = {}
+    for period_data in prior_periods:
+        for day_data in period_data["days"]:
+            for ex in day_data["exercises"]:
+                n_weeks, settled = _last_settled_weeks(ex)
+                if settled is None:
+                    continue
+                key = _normalize_ex_name(strip_parens(ex["name"]))
+                prev_n, _ = lookup.get(key, (0, 0))
+                if n_weeks > prev_n:
+                    lookup[key] = (n_weeks, settled)
+
+    return {k: v[1] for k, v in lookup.items()}
+
+
 def _format_exercise_history_compact(periods):
     """
     Compact format: one line per exercise showing the settled weight per period

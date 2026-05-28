@@ -67,6 +67,68 @@ def parse_suggestions(ai_response):
     return suggestions
 
 
+def validate_suggestions(suggestions, settled_weights):
+    """
+    Post-process AI weight suggestions against pre-calculated settled weights.
+
+    If the AI's week-1 suggestion for an exercise deviates by more than 40%
+    from the known settled weight, override it and re-scale the progression
+    proportionally.  Logs a warning for each correction.
+
+    Args:
+        suggestions:     Parsed list from parse_suggestions().
+        settled_weights: Dict of normalized exercise name → settled peso (float).
+                         Keys should be normalized (lowercase, accent-stripped,
+                         parentheses removed) for fuzzy matching.
+
+    Returns:
+        The (possibly corrected) suggestions list.
+    """
+    import unicodedata
+
+    def _norm(s):
+        nfkd = unicodedata.normalize("NFKD", s.lower().strip())
+        no_acc = "".join(c for c in nfkd if not unicodedata.combining(c))
+        return re.sub(r"\s*\(.*?\)", "", no_acc).strip()
+
+    for s in suggestions:
+        name     = s.get("exercise", "")
+        weeks    = s.get("weeks", [])
+        if not weeks or weeks[0] is None:
+            continue
+        ai_w1 = float(weeks[0])
+        if ai_w1 == 0:
+            continue  # bodyweight — skip
+
+        key = _norm(name)
+        # Fuzzy match: accept if key starts with or contains the settled key
+        baseline = None
+        for skey, sval in settled_weights.items():
+            if key == skey or key.startswith(skey) or skey.startswith(key):
+                baseline = sval
+                break
+
+        if baseline is None or baseline == 0:
+            continue
+
+        ratio = ai_w1 / baseline
+        if ratio < 0.6 or ratio > 1.4:
+            # AI is off by more than 40% — override with baseline
+            print(f"  [validate] Correcting '{name}': AI={ai_w1:.1f}kg vs "
+                  f"baseline={baseline:.1f}kg (ratio={ratio:.2f}) → overriding")
+            # Preserve progression: add AI-style increments to the correct base
+            increments = [w - weeks[i-1] for i, w in enumerate(weeks) if i > 0
+                          and weeks[i] is not None and weeks[i-1] is not None]
+            typical_inc = (sum(increments) / len(increments)) if increments else 2.5
+            # Use baseline as week-1, keep AI increments (capped at sane range)
+            typical_inc = max(1.25, min(5.0, typical_inc))
+            new_weeks = [baseline + typical_inc * i for i in range(len(weeks))]
+            s["weeks"] = [round(w * 2) / 2 for w in new_weeks]  # round to 0.5
+            s["reason"] = (s.get("reason", "") +
+                           f" [corregido: baseline script={baseline:.1f}kg]")
+    return suggestions
+
+
 def strip_suggestions_block(ai_response):
     """Removes the ```json ... ``` block from the AI response (for clean email body)."""
     return re.sub(r"```json\s*[\s\S]*?\s*```", "", ai_response).strip()

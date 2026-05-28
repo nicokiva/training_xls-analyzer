@@ -46,10 +46,10 @@ from pathlib import Path       # Path is the modern way to handle file paths in 
 from dotenv import load_dotenv  # third-party: reads .env file into environment variables
 
 from helpers.reader import get_service, get_write_service, load_all_periods, get_latest_week_indices, extract_week_data, get_active_period, get_last_completed_period, get_all_open_periods, rename_tab, is_active_period
-from helpers.ai import analyze
+from helpers.ai import analyze, get_settled_weights_dict
 from helpers.mailer import send_analysis
 from helpers.events import consume_pending_events, mark_event_processed
-from helpers.writer import parse_suggestions, strip_suggestions_block, write_suggestions_to_sheet, format_suggestions_for_email
+from helpers.writer import parse_suggestions, strip_suggestions_block, write_suggestions_to_sheet, format_suggestions_for_email, validate_suggestions
 from helpers.catalog import ensure_classified, calculate_volume, format_volume_block, get_axial_load_exercises
 from training_shared.events import EventType
 
@@ -284,6 +284,10 @@ def run_analysis(mode, args, service, periods, periods_override=None, return_onl
     if mode == "new-routine" and not args.mock:
         suggestions = parse_suggestions(analysis)
         if suggestions:
+            # Validate suggestions against pre-calculated baselines (corrects hallucinated weights)
+            prior_for_baseline = periods[1:] if len(periods) > 1 else []
+            settled_dict = get_settled_weights_dict(target_period, prior_for_baseline)
+            suggestions = validate_suggestions(suggestions, settled_dict)
             # Find the active non-ORIG tab to write to (never touch ORIG backups).
             import re as _re
             active_tab = next(
