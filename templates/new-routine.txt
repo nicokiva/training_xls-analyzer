@@ -69,34 +69,3 @@ State whether each muscle group is sufficient for hypertrophy (~10–20 direct s
 If a muscle is low, suggest ONE fix: an existing exercise that could add a set, on a day that already trains that muscle as primary. If fixing it would require violating the split → say so and leave the call to the coach.
 **STRICTLY ENFORCED**: Never suggest adding exercises from one muscle group to a day dedicated to a different group.
 
-### Pesos sugeridos
-After the analysis, output a JSON block with suggested starting weights for each exercise. Use the pre-calculated baseline from **"Pesos de cierre por ejercicio"** above as the primary source — do NOT derive weights from the compact history text. Priority:
-1. If the exercise has a baseline in the settled weights block → use that weight directly, adjusted only for combined/isolated context change.
-2. If the exercise has no prior history → estimate from the most recent history of exercises with the same movement pattern and muscle group, and state that explicitly in "reason".
-
-When the exercise appears as isolated in history but is now combined (or vice versa), adjust accordingly: combined execution limits output due to accumulated fatigue — expect 10–20% less than isolated baseline. If it was combined before and is now isolated, the inverse applies.
-
-The block MUST be valid JSON inside ```json ``` fences. Use this exact format:
-
-```json
-[
-  {{
-    "exercise": "Nombre exacto del ejercicio",
-    "day": 1,
-    "weeks": [70, 72.5, 75, 77.5],
-    "rest_s": 90,
-    "reason": "Una línea explicando por qué este peso, basado en su historial"
-  }}
-]
-```
-
-Rules:
-- **EXERCISE NAME**: The value of "exercise" MUST be identical, character by character, to the name provided in the routine structure above. Do not shorten, remove parentheses, or alter it in any way.
-- **Include EVERY exercise** in the JSON — no exceptions. If the routine has 9 exercises in a day, the JSON must have 9 entries for that day. Never truncate or summarize.
-- "weeks" must have exactly 4 values (one per week), showing progressive overload.
-- For bodyweight exercises, use 0.
-- "reason" must reference the **settled weight** from his history (last week of the period, not the peak) and explain any adjustment made for movement pattern or combined/isolated context.
-- **rest_s format — STRICTLY ENFORCED**: `rest_s` must be a plain integer (e.g. 90, 120) or the JSON literal `null` (no quotes, no text, no dashes). Strings like `"—"`, `"null"`, `"0"`, or any non-integer value are invalid and will break the parser.
-- **Combined exercises and rest:** when two or more exercises appear together as a combined set (superset), the rest time applies after the LAST exercise of the group, not between them. Set `rest_s` only on the last exercise of each combined group; set `rest_s: null` for all others in the same group.
-- **Include the abdomen group in every day.** The abdomen (Abdominal recto largo, Rotaciones de pie con disco, Extensión de cadera en banco) appears as a combined group at the start of every training day. You MUST include all three in the JSON for every day, with `rest_s` only on Extensión de cadera en banco (the last of the group).
-- **Abdomen weights are identical across all 4 days.** Since the abdomen group repeats the same exercises every day, the "weeks" array must be exactly the same for each exercise regardless of which day it appears in. Do NOT vary abdomen weights between days.

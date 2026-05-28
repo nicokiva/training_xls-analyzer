@@ -46,10 +46,10 @@ from pathlib import Path       # Path is the modern way to handle file paths in 
 from dotenv import load_dotenv  # third-party: reads .env file into environment variables
 
 from helpers.reader import get_service, get_write_service, load_all_periods, get_latest_week_indices, extract_week_data, get_active_period, get_last_completed_period, get_all_open_periods, rename_tab, is_active_period
-from helpers.ai import analyze, get_settled_weights_dict
+from helpers.ai import analyze, get_settled_weights_dict, get_weight_suggestions
 from helpers.mailer import send_analysis
 from helpers.events import consume_pending_events, mark_event_processed
-from helpers.writer import parse_suggestions, strip_suggestions_block, write_suggestions_to_sheet, format_suggestions_for_email, validate_suggestions
+from helpers.writer import strip_suggestions_block, write_suggestions_to_sheet, format_suggestions_for_email, validate_suggestions
 from helpers.catalog import ensure_classified, calculate_volume, format_volume_block, get_axial_load_exercises
 from training_shared.events import EventType
 
@@ -280,13 +280,19 @@ def run_analysis(mode, args, service, periods, periods_override=None, return_onl
     # The system prompt now instructs the AI to respond directly in Spanish,
     # so no separate translation call is needed (and it would waste ~4k tokens).
 
-    # For new-routine: extract JSON suggestions, write to sheet, enrich email body.
+    # For new-routine: get structured weight suggestions via separate Gemini call.
     if mode == "new-routine" and not args.mock:
-        suggestions = parse_suggestions(analysis)
+        prior_for_suggestions = periods[1:] if len(periods) > 1 else []
+        suggestions = get_weight_suggestions(
+            target_period,
+            prior_for_suggestions,
+            args.api_key,
+            goal=args.goal,
+            axial_load_exercises=axial_load_exercises,
+        )
         if suggestions:
-            # Validate suggestions against pre-calculated baselines (corrects hallucinated weights)
-            prior_for_baseline = periods[1:] if len(periods) > 1 else []
-            settled_dict = get_settled_weights_dict(target_period, prior_for_baseline)
+            # Validate against pre-calculated baselines (safety net for outliers)
+            settled_dict = get_settled_weights_dict(target_period, prior_for_suggestions)
             suggestions = validate_suggestions(suggestions, settled_dict)
             # Find the active non-ORIG tab to write to (never touch ORIG backups).
             import re as _re
@@ -301,11 +307,9 @@ def run_analysis(mode, args, service, periods, periods_override=None, return_onl
                 write_suggestions_to_sheet(write_service, args.sheets_id, active_tab, suggestions)
             else:
                 print("[new-routine] No active non-ORIG tab found — skipping sheet write.")
-            # Strip JSON block from email body and append formatted table instead
-            analysis = strip_suggestions_block(analysis)
             analysis += format_suggestions_for_email(suggestions)
         else:
-            print("[new-routine] No JSON suggestions block found in AI response.")
+            print("[new-routine] Structured call returned no suggestions.")
 
     for old_file in ANALYSES_DIR.glob(f"analysis_{mode}_*.md"):
         old_file.unlink()

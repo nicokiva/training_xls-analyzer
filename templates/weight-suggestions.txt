@@ -1,0 +1,37 @@
+Nicolás starts period {period}. Goal: {goal}.
+
+## Routine to prescribe weights for
+
+{routine}
+
+## Pre-calculated settled weights (use as direct baseline — do NOT derive from history text)
+
+{settled_weights_block}
+
+## Axial load exercises detected in this routine
+
+{axial_load_exercises}
+
+---
+
+## RULES — read before generating any number
+
+**WEIGHTS**
+1. For every exercise that appears in the settled weights block above → use that weight as W1 baseline, adjusted only for combined/isolated context change.
+2. Combined execution (superserie) causes accumulated fatigue → expect 10–20% less than the isolated baseline. If it was combined before and is now isolated, the inverse applies.
+3. If an exercise has no settled weight → estimate from a similar movement pattern in the settled block, state it in "reason".
+4. W1 should start 2.5–5 kg below the settled baseline to create a 4-week ramp. W2–W4 progress linearly.
+5. Bodyweight exercises → weeks = [0, 0, 0, 0].
+
+**SAFETY (axial load)**
+For every exercise listed under "Axial load exercises" above: keep RIR 1-2. Never push these to maximum load.
+
+**REST (rest_s)**
+- Each `rest_s` must be a plain integer or null. Never a string.
+- Combined/superset group: set `rest_s` ONLY on the LAST exercise of the group. All others in the same group must be null.
+- The abdomen group (Abdominal recto largo, Rotaciones de pie con disco, Extensión de cadera en banco) appears at the start of every day as a combined group: rest_s = null on the first two, rest_s = 90 on Extensión de cadera en banco.
+
+**COMPLETENESS**
+- Include EVERY exercise from the routine above — no exceptions, no truncations.
+- Abdomen weights must be identical across all 4 days (same exercises, same load).
+- The "exercise" field must match the routine name character by character.

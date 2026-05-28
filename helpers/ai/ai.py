@@ -25,12 +25,15 @@ Template system:
 from pathlib import Path
 import time
 from datetime import datetime
+from typing import List
 
 from google import genai
 from google.genai import types
 
-MODEL       = "gemini-2.0-flash"  # default: generous free-tier TPM
-MODEL_FAST  = "gemini-2.0-flash"  # catalog classification (same model, different call params)
+from .models import WeightSuggestion
+
+MODEL            = "gemini-2.0-flash"   # prose analysis
+MODEL_STRUCTURED = "gemini-2.5-flash"   # structured weight suggestions
 
 # Templates are looked up relative to the project root (two levels up from this file).
 # Path(__file__) is the absolute path of this file.
@@ -659,6 +662,88 @@ Yes, overall. 4 out of 6 main exercises improved in weight or reps.
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
+def get_weight_suggestions(
+    new_period: dict,
+    prior_periods: list,
+    api_key: str,
+    goal: str = "hipertrofia",
+    axial_load_exercises: list = None,
+) -> list[dict]:
+    """
+    Makes a separate structured Gemini call to get weight suggestions for a new routine.
+
+    Uses response_schema=List[WeightSuggestion] so Gemini is forced to produce
+    valid typed JSON at the token level — no regex parsing, no hallucinated formats.
+
+    Returns a list of dicts (same shape as parse_suggestions output) so the
+    rest of the pipeline (validate_suggestions, write_suggestions_to_sheet) works unchanged.
+    """
+    template_path = TEMPLATES_DIR / "weight-suggestions.txt"
+    template = template_path.read_text(encoding="utf-8") if template_path.exists() else ""
+
+    routine_block  = _format_routine_structure(new_period)
+    settled_block  = _compute_settled_weights(new_period, prior_periods)
+    axial_str      = ", ".join(axial_load_exercises) if axial_load_exercises else "ninguno detectado"
+    period_label   = new_period.get("period", "")
+
+    prompt = template.format(
+        routine=routine_block,
+        settled_weights_block=settled_block,
+        axial_load_exercises=axial_str,
+        period=period_label,
+        goal=goal,
+    )
+
+    client = genai.Client(api_key=api_key)
+    system = (
+        "Sos un entrenador de Powerbuilding de élite. "
+        "Analizás números con frialdad matemática. "
+        "Hablás con voseo argentino. "
+        "Seguís las reglas del prompt al pie de la letra."
+    )
+
+    log_dir  = Path(__file__).parent.parent.parent / "logs"
+    log_dir.mkdir(exist_ok=True)
+    log_path = log_dir / f"gemini_{datetime.now().strftime('%Y%m%d')}.log"
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with open(log_path, "a", encoding="utf-8") as f:
+        f.write(f"\n{'='*80}\n")
+        f.write(f"[{timestamp}] MODEL: {MODEL_STRUCTURED} [STRUCTURED]\n")
+        f.write(f"--- WEIGHT SUGGESTIONS PROMPT ({len(prompt)} chars) ---\n")
+        f.write(prompt + "\n")
+
+    print(f"  Sending [weight-suggestions] prompt to Gemini ({MODEL_STRUCTURED})...", flush=True)
+
+    for attempt in range(2):
+        try:
+            response = client.models.generate_content(
+                model=MODEL_STRUCTURED,
+                config=types.GenerateContentConfig(
+                    system_instruction=system,
+                    temperature=0.1,
+                    response_mime_type="application/json",
+                    response_schema=List[WeightSuggestion],
+                ),
+                contents=prompt,
+            )
+            parsed: list[WeightSuggestion] = response.parsed
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(f"--- STRUCTURED RESPONSE ({len(parsed)} items) ---\n")
+                for item in parsed:
+                    f.write(f"  {item.model_dump()}\n")
+            # Convert Pydantic objects → plain dicts for the rest of the pipeline
+            return [item.model_dump() for item in parsed]
+        except Exception as e:
+            err = str(e)
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(f"--- ERROR (attempt {attempt+1}) ---\n{err}\n")
+            if ("429" in err or "RESOURCE_EXHAUSTED" in err) and attempt == 0:
+                print("  Rate limit hit — waiting 65s...")
+                time.sleep(65)
+                continue
+            raise
+
 
 def translate_to_spanish(text, api_key):
     """
