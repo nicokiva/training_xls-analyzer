@@ -11,36 +11,46 @@ Nicolás just received a new training routine assigned by his coach for period {
 Write two sections:
 
 ### Cómo usar esta rutina para crecer
-Give Nicolás a concrete, actionable guide for executing this specific routine to maximize hypertrophy and muscle size. Base recommendations on his actual history (settled weights, drop sets he used, rep ranges he handled). Write in Spanish. Be direct and specific — no generic advice.
+Write in Spanish. Be specific and data-driven — every claim must cite something from his actual history. If you can't back it up with a number or a pattern from the data, don't say it. No generic gym advice.
 
 Structure it as follows:
 
-**1. Lógica de la progresión de pesos**
-Explain how he should use the 4 weeks: when to increase weight, by how much (typical jumps based on his history), and what signals to look for (e.g. if he completes all reps with margin → add weight next week). Reference his actual progression patterns from history.
+**1. Progresión de pesos: qué dice su historial**
+For each exercise in this new routine, look up its progression across the most recent period in {history} and report:
+- The actual week-by-week weights for that exercise (W1→W2→W3→W4). If it appears as combined vs isolated, note it.
+- Whether the progression was linear, stalled, or regressed in the last period.
+- The actual week-over-week jump he used (e.g. "subió 2.5 kg por semana" or "se estancó en S3").
+- A concrete recommendation for this new period based on that pattern (e.g. "arrancá 2.5 kg por debajo del S4 anterior para dejar margen de progresión en las 4 semanas").
+If an exercise has no history, say so explicitly and explain what reference you're using for the estimate.
+Do NOT give a generic rule like "si completás todos los reps, subí 2.5 kg". Use his actual data.
 
-**2. Tiempos de descanso por tipo de ejercicio**
-For each exercise in this routine, suggest a specific rest time based on the demand it places on the nervous system and the type of stimulus it generates (mechanical tension vs. metabolic stress). Do not use generic categories — reason exercise by exercise or by group if they share the same stimulus type. Explain the tradeoff relevant to his goal.
+**2. Drop sets: qué hace y qué debería hacer**
+Scan the history for drop sets — defined as: same exercise, same week, the series show decreasing weights (e.g. series 1: 30 kg, series 2: 25 kg, series 3: 20 kg). For each exercise where you find this pattern:
+- Quote the actual weights (period and week where it appears).
+- Say whether the exercise is now combined or isolated in this new routine, and adjust the recommendation accordingly.
+- Give a specific instruction: continue, extend (add a drop), or simplify — with the actual weights to use in week 1.
 
-**3. Cómo llegar al fallo (o cerca)**
-For hypertrophy, the last set of each exercise should be close to failure. Based on his history, identify which exercises he already pushes to failure (drop sets visible in history) and which he could push harder. Give specific guidance per exercise group.
+**Safety rule — STRICTLY ENFORCED**: Never suggest drop sets, rest-pause, or failure techniques on free-barbell exercises under axial load: Sentadilla, Peso muerto and its variations, Empuje de hombros con barra, Empuje de pecho con barra. If you find drop sets on those exercises in his history, flag it as risky and do NOT recommend continuing. Drop sets and failure techniques are only appropriate for guided machines (Prensa, Hammer, poleas) and isolation exercises.
 
-**Safety rule — STRICTLY ENFORCED**: Never suggest failure techniques (drop sets, rest-pause, forced reps) on free-barbell exercises under axial load: Sentadilla, Peso muerto and its variations, Empuje de hombros con barra, Empuje de pecho con barra. Accumulated fatigue in these movements destroys spinal stability before the target muscle fails — this is a direct injury risk. Failure techniques are only appropriate for guided machines (Prensa, Hammer, poleas) and isolation exercises.
+**3. Margen vs. fallo: ejercicio por ejercicio**
+For each exercise, look at the last week of the most recent period (the settled weight). Determine whether he had obvious margin or was already near failure by checking:
+- Did the series weights stay flat across all 3 series, OR did they drop (indicating he couldn't maintain)?
+- Was there a drop set on the last series?
+Report this concretely per exercise: "En X, las 3 series fueron a Y kg sin drops → tenía margen. En Z, la serie 3 bajó a W kg → ya estaba cerca del fallo."
+Do NOT write a generic instruction to "go to failure on every last set." Only say what the data shows.
 
-**4. Drop sets y técnicas que ya usa**
-He already uses drop sets on some exercises (e.g. triceps, hammer). Identify all exercises where his history shows drop sets or weight reductions, and confirm whether to keep them, extend them, or simplify them for this period.
-
-Apply the same safety rule: do not suggest extending drop sets to free-barbell exercises, even if he has previously used them there. If you see drop sets on a barbell exercise in his history, note it but do NOT recommend continuing that pattern — flag it as risky instead.
-
-**5. Volumen y frecuencia: ¿es suficiente para crecer?**
-The following volume was calculated directly from the coach's routine by the script — these are real numbers, not estimates. Use them as-is:
+**4. Volumen y frecuencia: qué dicen los números reales**
+The following volume was calculated directly from the coach's routine by the script — these are exact numbers, not estimates. Use them as-is:
 
 {volume_block}
 
-Compare against hypertrophy evidence (10–20 sets/muscle/week for intermediate lifters). Pay special attention to the muscle groups most relevant to his goal ({goal}) — flag anything significantly below target and suggest a concrete fix the coach could consider (e.g. "agregar una serie extra de X al final del Día Y"). If volume is adequate, confirm briefly.
+For each muscle group, state whether the volume is sufficient for hypertrophy (evidence: ~10–20 direct sets/week for intermediates). Flag any muscle below 6 direct sets/week as critically low. Pay special attention to muscles directly relevant to his goal ({goal}).
 
-**Split respect rule — STRICTLY ENFORCED**: When suggesting a volume fix, you may ONLY add an exercise to a day that already works that muscle group as primary. Never suggest adding a chest, shoulder, back, or arm exercise to a legs day, or a legs exercise to an upper-body day. If the only way to fix a muscle's volume is to violate the split, say so explicitly and leave the decision to the coach.
+If a muscle is low, suggest ONE concrete fix: an exercise already in the routine that could add a set, and which day. Respect the training split — only add to days that already train that muscle as primary. If that's impossible without breaking the split, say so explicitly and leave the decision to the coach.
 
-Do NOT: repeat information visible in the weights table, give generic advice like "comé proteína" or "dormí bien", or pad with unnecessary positives.
+**Split respect rule — STRICTLY ENFORCED**: Never suggest adding exercises from one muscle group to a day dedicated to a different group (e.g. no shoulder work on a legs day).
+
+Do NOT: give generic advice ("comé proteína", "dormí bien"), pad with positives, or repeat information already visible in the weights table.
 
 ### Pesos sugeridos
 After the analysis, output a JSON block with suggested starting weights for each exercise. Base suggestions on his full history using this priority:
