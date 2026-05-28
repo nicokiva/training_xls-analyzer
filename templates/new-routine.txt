@@ -70,6 +70,7 @@ Rules:
 - "weeks" must have exactly 4 values (one per week), showing progressive overload.
 - For bodyweight exercises, use 0.
 - "reason" must reference the **settled weight** from his history (last week of the period, not the peak) and explain any adjustment made for movement pattern or combined/isolated context.
+- **rest_s format — STRICTLY ENFORCED**: `rest_s` must be a plain integer (e.g. 90, 120) or the JSON literal `null` (no quotes, no text, no dashes). Strings like `"—"`, `"null"`, `"0"`, or any non-integer value are invalid and will break the parser.
 - **Combined exercises and rest:** when two or more exercises appear together as a combined set (superset), the rest time applies after the LAST exercise of the group, not between them. Set `rest_s` only on the last exercise of each combined group; set `rest_s: null` for all others in the same group.
 - **Include the abdomen group in every day.** The abdomen (Abdominal recto largo, Rotaciones de pie con disco, Extensión de cadera en banco) appears as a combined group at the start of every training day. You MUST include all three in the JSON for every day, with `rest_s` only on Extensión de cadera en banco (the last of the group).
 - **Abdomen weights are identical across all 4 days.** Since the abdomen group repeats the same exercises every day, the "weeks" array must be exactly the same for each exercise regardless of which day it appears in. Do NOT vary abdomen weights between days.

@@ -50,9 +50,21 @@ def parse_suggestions(ai_response):
     if not match:
         return None
     try:
-        return json.loads(match.group(1))
+        suggestions = json.loads(match.group(1))
     except json.JSONDecodeError:
         return None
+    # Sanitize rest_s: must be int or None. Reject strings like "—", "null", "90s".
+    for s in suggestions:
+        val = s.get("rest_s")
+        if val is None:
+            continue
+        if isinstance(val, (int, float)):
+            s["rest_s"] = int(val)
+        else:
+            # Try to extract digits (e.g. "90s" → 90), otherwise null
+            digits = re.sub(r"[^\d]", "", str(val))
+            s["rest_s"] = int(digits) if digits else None
+    return suggestions
 
 
 def strip_suggestions_block(ai_response):
