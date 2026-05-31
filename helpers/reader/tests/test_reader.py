@@ -267,3 +267,48 @@ class TestExtractWeekData:
         period = self._make_full_period()
         result = extract_week_data(period, 10)
         assert result == []
+
+
+# ---------------------------------------------------------------------------
+# Drop set notation in parse_tab
+# ---------------------------------------------------------------------------
+
+class TestDropSetParsing:
+    def _build_rows_with_drop_set(self, peso_value):
+        ex_row = ["Curl de bíceps"]
+        for w in range(4):
+            for s in range(3):
+                ex_row.append("8")
+                ex_row.append(peso_value if (w == 0 and s == 0) else "30")
+        return [
+            ["Dia 1"],
+            ["", "1", "", "1", "", "1", "", "2", "", "2", "", "2", "", "3", "", "3", "", "3", "", "4", "", "4", "", "4", ""],
+            ["", "Rep.", "Peso", "Rep.", "Peso", "Rep.", "Peso", "Rep.", "Peso", "Rep.", "Peso", "Rep.", "Peso",
+             "Rep.", "Peso", "Rep.", "Peso", "Rep.", "Peso", "Rep.", "Peso", "Rep.", "Peso", "Rep.", "Peso"],
+            ex_row,
+        ]
+
+    def test_drop_set_stores_full_sequence(self):
+        rows = self._build_rows_with_drop_set("8 a 42.5 / 4 a 37.5 / 4 a 32.5")
+        days = parse_tab(rows)
+        s = days[0]["exercises"][0]["weeks"][0]["series"][0]
+        assert s["drop_set"] == "8 a 42.5 / 4 a 37.5 / 4 a 32.5"
+
+    def test_drop_set_extracts_starting_weight_as_peso(self):
+        rows = self._build_rows_with_drop_set("8 a 42.5 / 4 a 37.5")
+        days = parse_tab(rows)
+        s = days[0]["exercises"][0]["weeks"][0]["series"][0]
+        assert s["peso"] == "42.5"
+
+    def test_normal_peso_has_no_drop_set_key(self):
+        rows = self._build_rows_with_drop_set("30")
+        days = parse_tab(rows)
+        s = days[0]["exercises"][0]["weeks"][0]["series"][0]
+        assert "drop_set" not in s
+        assert s["peso"] == "30"
+
+    def test_drop_set_peso_is_float_parseable(self):
+        rows = self._build_rows_with_drop_set("8 a 10 / 8 a 8 / 8 a 6")
+        days = parse_tab(rows)
+        s = days[0]["exercises"][0]["weeks"][0]["series"][0]
+        assert float(s["peso"]) == 10.0

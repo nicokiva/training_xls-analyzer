@@ -97,11 +97,17 @@ def _make_system_prompt(goal):
 
 
 
-def _call_gemini(client, system_prompt, user_prompt, max_tokens=4096, model=None):
+def _call_gemini(client, system_prompt, user_prompt, max_tokens=4096, model=None, thinking_budget=None):
     """
     Makes a call to Gemini and returns the response text.
     Retries once after 65 seconds if the per-minute rate limit is hit.
     Logs every request and response to logs/gemini_YYYYMMDD.log.
+
+    thinking_budget: if set, controls how many tokens Gemini can use for
+    internal reasoning (0 = disable thinking). gemini-2.5-flash uses thinking
+    by default and those tokens count against max_output_tokens, so prose-only
+    calls should pass thinking_budget=0 to avoid the budget being consumed by
+    reasoning instead of actual output.
     """
     used_model = model or MODEL
 
@@ -123,18 +129,27 @@ def _call_gemini(client, system_prompt, user_prompt, max_tokens=4096, model=None
     _log(user_prompt)
     # ─────────────────────────────────────────────────────────────────────────
 
+    config_kwargs = dict(
+        system_instruction=system_prompt,
+        max_output_tokens=max_tokens,
+    )
+    if thinking_budget is not None:
+        config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=thinking_budget)
+
     for attempt in range(2):
         try:
             response = client.models.generate_content(
                 model=used_model,
-                config=types.GenerateContentConfig(
-                    system_instruction=system_prompt,
-                    max_output_tokens=max_tokens,
-                ),
+                config=types.GenerateContentConfig(**config_kwargs),
                 contents=user_prompt,
             )
+            finish_reason = None
+            try:
+                finish_reason = response.candidates[0].finish_reason
+            except Exception:
+                pass
             result = response.text
-            _log(f"--- RESPONSE ({len(result)} chars) ---")
+            _log(f"--- RESPONSE ({len(result)} chars, finish_reason={finish_reason}) ---")
             _log(result)
             return result
         except Exception as e:
@@ -225,7 +240,7 @@ _EXERCISE_ALIASES_RAW = {
     "Empuje de pecho en Hammer": [
         "Empuje de pecho en hammer",
         "Pecho en hammer",
-        "Empuje de pecho en hammer",
+        "Press en hammer",
     ],
     # ── Triceps ──────────────────────────────────────────────────────────────
     "Triceps con polea (agarre prono)": [
@@ -476,6 +491,12 @@ def _compute_settled_weights(new_period: dict, prior_periods: list) -> str:
             pos_note  = f" [#{pos}/{n_in_day} del día]"
             # Try canonical key first (alias resolution), then raw key — always same is_comb
             entries = lookup.get((canon_key, new_is_c)) or lookup.get((raw_key, new_is_c))
+            isolated_fallback = False
+            # If combined and no match found, fall back to isolated history as reference point
+            if not entries and new_is_c:
+                entries = lookup.get((canon_key, False)) or lookup.get((raw_key, False))
+                if entries:
+                    isolated_fallback = True
             key = canon_key  # used for partial/archetype fallback below
 
             if entries:
@@ -484,8 +505,13 @@ def _compute_settled_weights(new_period: dict, prior_periods: list) -> str:
                 p_label, settled, n_weeks, is_c = most_recent
                 comb_note  = " (era combinado)" if is_c else ""
                 weeks_note = f" [{n_weeks} semanas de datos]"
-                line = (f"  D{day_num} {ex['name']}{pos_note}: {p_label} → {settled:.1f} kg"
-                        f"{comb_note}{weeks_note}")
+                if isolated_fallback:
+                    line = (f"  D{day_num} {ex['name']}{pos_note}: sin historial combinado → "
+                            f"referencia aislada {p_label} → {settled:.1f} kg{weeks_note} "
+                            f"(nuevo en contexto combinado; sugerí ~90% como punto de partida)")
+                else:
+                    line = (f"  D{day_num} {ex['name']}{pos_note}: {p_label} → {settled:.1f} kg"
+                            f"{comb_note}{weeks_note}")
 
                 # If most recent is sparse (<3 weeks), also show the most complete entry
                 if n_weeks < 3 and len(entries) > 1:
@@ -632,33 +658,41 @@ def _format_exercise_history_compact(periods):
                     for s in w["series"]
                     if s.get("note")
                 ]
+                drop_sets = [
+                    s["drop_set"]
+                    for w in ex["weeks"]
+                    for s in w["series"]
+                    if s.get("drop_set")
+                ]
                 key = (period, canon, is_comb)
                 prev = best_per_period.get(key)
                 prev_n = prev[0] if prev else 0
                 prev_s = prev[1] if prev else 0
                 if n_weeks > prev_n or (n_weeks == prev_n and settled > prev_s):
-                    best_per_period[key] = (n_weeks, settled, ex_note, set_notes)
+                    best_per_period[key] = (n_weeks, settled, ex_note, set_notes, drop_sets)
 
-    # Rebuild ordered entries: (canonical_name, is_comb) → list of (period, settled, ex_note, set_notes)
+    # Rebuild ordered entries: (canonical_name, is_comb) → list of (period, settled, ex_note, set_notes, drop_sets)
     exercise_entries = {}
-    for (period, canon, is_comb), (_, settled, ex_note, set_notes) in best_per_period.items():
+    for (period, canon, is_comb), (_, settled, ex_note, set_notes, drop_sets) in best_per_period.items():
         exercise_entries.setdefault((canon, is_comb), []).append(
-            (period, settled, ex_note, set_notes)
+            (period, settled, ex_note, set_notes, drop_sets)
         )
 
     lines = []
     for (canon, is_comb), period_entries in exercise_entries.items():
         label = f"**{canon}**" + (" *(combinado)*" if is_comb else "")
-        parts = [f"{p[:5]}:{s:.1f}kg" for p, s, _, __ in period_entries]
+        parts = [f"{p[:5]}:{s:.1f}kg" for p, s, _, __, ___ in period_entries]
         line = f"{label}: {' | '.join(parts)}"
         # Append any notes collected for this exercise across periods
         note_parts = []
-        for p, _, ex_note, set_notes in period_entries:
+        for p, _, ex_note, set_notes, drop_sets in period_entries:
             tag = p[:5]
             if ex_note:
                 note_parts.append(f"[Note {tag}: \"{ex_note}\"]")
             for sn in set_notes:
                 note_parts.append(f"[Note {tag}: \"{sn}\"]")
+            for ds in drop_sets:
+                note_parts.append(f"[Drop set {tag}: {ds}]")
         if note_parts:
             line += "  " + "  ".join(note_parts)
         lines.append(line)
@@ -1151,4 +1185,6 @@ def analyze(periods, api_key, mock=False, mode="global", goal="hipertrofia",
     client = genai.Client(api_key=api_key)
     system = _make_system_prompt(goal)
     print(f"  Sending [{mode}] prompt to Gemini...", flush=True)
-    return _call_gemini(client, system, prompt, max_tokens=16384)
+    # Disable thinking for prose generation — thinking tokens count against
+    # max_output_tokens in gemini-2.5-flash, leaving almost no budget for output.
+    return _call_gemini(client, system, prompt, max_tokens=16384, thinking_budget=0)

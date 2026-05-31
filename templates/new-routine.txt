@@ -42,13 +42,15 @@ Si no hay evidencia de tolerancia técnica en el historial → no prescribís el
 
 ---
 
-Write two sections in Spanish. **FORMAT RULE**: The exercise-by-exercise sections must use this structure exactly — NO "D1 Ejercicio:" style:
+Write two sections in Spanish. **FORMAT RULE**: The exercise-by-exercise sections must use this exact Markdown structure — use `###` headings for each day (so they render as headings in the email), and leave a blank line before each bullet list. NO "D1 Ejercicio:" style, NO bold-only day labels:
 
-**Día 1**
+### Día 1
+
 - **Ejercicio**: comentario concreto con número.
 - **Ejercicio**: comentario concreto con número.
 
-**Día 2**
+### Día 2
+
 - **Ejercicio**: ...
 
 ### Cómo usar esta rutina para crecer
@@ -58,9 +60,9 @@ For each exercise in this new routine, look up its actual week-by-week progressi
 If an exercise has no history → say so, state which reference you're using, and recommend starting at RIR 2 conservador.
 Do NOT write any progression logic that isn't directly traceable to a specific data point in the history above.
 
-**FATIGUE RULE**: The routine structure shows each exercise's position in the day (#1, #2, …). Exercises later in the day accumulate fatigue from prior exercises. When suggesting weights for exercises in positions #4 or later, explicitly account for this: a weight that's achievable fresh may be 10–20% lower after 3+ prior exercises. Never compare a late-day exercise to its isolated fresh benchmark without acknowledging this.
+**FATIGUE RULE**: The routine structure shows each exercise's position in the day (#1, #2, …). Fatigue is muscle-group-specific — only prior exercises that work the SAME primary muscle group matter. Example: if positions #1-3 are core/glute work and position #4 is a chest press, there is ZERO chest fatigue accumulated — treat position #4 chest press as if it were position #1 for that muscle. Only apply a fatigue discount when the prior exercises directly tax the same muscle (e.g. chest after chest, quads after quads). When there is no same-muscle fatigue, say explicitly "primer ejercicio del día para este músculo — sin fatiga acumulada".
 
-**COMBINED vs ISOLATED RULE**: If the history has the same exercise both with and without *(combinado)* label, those are DIFFERENT execution contexts with incomparable weights. Only compare isolated→isolated and combined→combined. Never say "regresión" across contexts.
+**COMBINED vs ISOLATED RULE**: If the history has the same exercise both with and without *(combinado)* label, those are DIFFERENT execution contexts with incomparable weights. Only compare isolated→isolated and combined→combined. Never say "regresión" across contexts. Specifically: if a prior period had the exercise as combined and the new routine has it as isolated (or vice versa), do NOT call this a regression — explicitly say the context changed and that the weights are not comparable. Use only same-context history to determine the baseline.
 
 **2. Drop sets: historial y prescripción**
 IMPORTANT: Only scan for drop sets in exercises that appear in the NEW routine above. Ignore any drop set history for exercises that are NOT in this routine — do not mention them at all.

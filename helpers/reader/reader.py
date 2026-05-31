@@ -163,31 +163,35 @@ def read_tab_italic_cells(service, spreadsheet_id, tab_name):
 
 def read_tab_metadata(service, spreadsheet_id, tab_name):
     """
-    Fetches notes AND italic formatting for a tab in a single API call.
+    Fetches notes, italic formatting, and yellow-background cells for a tab
+    in a single API call.
 
-    Combining both into one request halves the number of API calls per tab,
-    avoiding Sheets API read quota limits (60 reads/min/user) when loading
-    many tabs at once.
+    Combined exercises are marked in two ways:
+      1. Exercise name starts with "[C] " (new convention).
+      2. Exercise name cell (col 0) has a yellow background — rgb ≈ (1, 0.95, 0.8)
+         (older convention used before the [C] prefix was introduced).
 
     Returns:
-        Tuple (notes, italic_cells) where:
+        Tuple (notes, italic_cells, yellow_rows) where:
           notes:        Dict mapping (row_idx, col_idx) → note text (str).
           italic_cells: Set of (row_idx, col_idx) for italic-formatted cells.
+          yellow_rows:  Set of row_idx where col 0 has a yellow background.
     """
     result = service.spreadsheets().get(
         spreadsheetId=spreadsheet_id,
         ranges=[f"'{tab_name}'"],
-        fields="sheets.data.rowData.values(note,userEnteredFormat.textFormat.italic)",
+        fields="sheets.data.rowData.values(note,userEnteredFormat.textFormat.italic,userEnteredFormat.backgroundColor)",
     ).execute()
 
     notes  = {}
     italic = set()
+    yellow_rows: set = set()
     sheets = result.get("sheets", [])
     if not sheets:
-        return notes, italic
+        return notes, italic, yellow_rows
     data = sheets[0].get("data", [])
     if not data:
-        return notes, italic
+        return notes, italic, yellow_rows
     for row_idx, row in enumerate(data[0].get("rowData", [])):
         for col_idx, cell in enumerate(row.get("values", [])):
             note = cell.get("note", "").strip()
@@ -196,10 +200,37 @@ def read_tab_metadata(service, spreadsheet_id, tab_name):
             fmt = cell.get("userEnteredFormat", {})
             if fmt.get("textFormat", {}).get("italic"):
                 italic.add((row_idx, col_idx))
-    return notes, italic
+            # Detect yellow background on the exercise-name cell (col 0).
+            # Yellow (combined marker): high red, high green, noticeably lower blue.
+            if col_idx == 0:
+                bg = fmt.get("backgroundColor", {})
+                r = bg.get("red",   1.0)
+                g = bg.get("green", 1.0)
+                b = bg.get("blue",  1.0)
+                if r >= 0.95 and g >= 0.88 and b <= 0.85:
+                    yellow_rows.add(row_idx)
+    return notes, italic, yellow_rows
 
 
-def parse_tab(rows, notes=None, italic_cells=None):
+def _parse_drop_set_start(raw: str) -> str:
+    """
+    Extracts the starting weight from a drop set notation like "8 a 42.5 / 4 a 37.5".
+    Pattern: "<reps> a <weight> / ..." — weight follows "a ".
+    Returns the weight as a string, or the original string if unparseable.
+    """
+    import re
+    # Look for " a <number>" pattern — weight follows "a "
+    m = re.search(r"\ba\s+([\d]+(?:[.,][\d]+)?)", raw)
+    if m:
+        return m.group(1).replace(",", ".")
+    # Fallback: first number found
+    m = re.search(r"[\d]+(?:[.,][\d]+)?", raw)
+    if m:
+        return m.group(0).replace(",", ".")
+    return raw
+
+
+def parse_tab(rows, notes=None, italic_cells=None, yellow_rows=None):
     """
     Parses the raw rows from a tab and returns a structured list of days.
 
@@ -242,6 +273,8 @@ def parse_tab(rows, notes=None, italic_cells=None):
     """
     if notes is None:
         notes = {}
+    if yellow_rows is None:
+        yellow_rows = set()
     days = []
     i = 0
 
@@ -280,13 +313,12 @@ def parse_tab(rows, notes=None, italic_cells=None):
                     break
 
                 # Read the exercise: name + 4 weeks × 3 sets × (reps, weight)
-                # Combined exercises are prefixed with "[C] " in the sheet —
-                # they are performed back-to-back with less rest, so weights are
-                # naturally lower than isolated exercises and should not be treated
-                # as a regression by the AI.
+                # Combined exercises are detected in two ways:
+                #   1. Name prefixed with "[C] " (current convention).
+                #   2. Name cell has a yellow background (older convention).
                 raw_name = ex_row[0].strip()
-                is_comb  = raw_name.startswith("[C] ")
-                name     = raw_name[4:] if is_comb else raw_name
+                is_comb  = raw_name.startswith("[C] ") or (i in yellow_rows)
+                name     = raw_name[4:] if raw_name.startswith("[C] ") else raw_name
 
                 # Note on column A = coach instruction or general observation for this exercise.
                 ex_note = notes.get((i, 0), "").strip()
@@ -306,6 +338,12 @@ def parse_tab(rows, notes=None, italic_cells=None):
                         # Note on a peso cell = observation about how that specific set went.
                         set_note = notes.get((i, col + 1), "").strip()
                         entry = {"reps": reps, "peso": peso}
+                        # Detect drop set notation: "8 a 42.5 / 4 a 37.5 / ..."
+                        # means consecutive mini-sets with no rest (drop set).
+                        # Store the full sequence and set peso to the starting weight.
+                        if "/" in peso:
+                            entry["drop_set"] = peso
+                            entry["peso"] = _parse_drop_set_start(peso)
                         if set_note:
                             entry["note"] = set_note
                         series.append(entry)
@@ -418,9 +456,9 @@ def load_all_periods(service, spreadsheet_id):
     for tab in tabs:
         if tab.upper().startswith("ORIG"):
             continue
-        rows              = read_tab(service, spreadsheet_id, tab)
-        notes, italic_cells = read_tab_metadata(service, spreadsheet_id, tab)
-        days              = parse_tab(rows, notes=notes, italic_cells=italic_cells)
+        rows                        = read_tab(service, spreadsheet_id, tab)
+        notes, italic_cells, yellow_rows = read_tab_metadata(service, spreadsheet_id, tab)
+        days              = parse_tab(rows, notes=notes, italic_cells=italic_cells, yellow_rows=yellow_rows)
         periods.append({"period": tab, "days": days})
     return periods
 

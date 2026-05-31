@@ -263,22 +263,24 @@ def run_analysis(mode, args, service, periods, periods_override=None, return_onl
         volume_block = format_volume_block(volume)
         axial_load_exercises = get_axial_load_exercises(all_exercise_names, catalog)
 
-    analysis = analyze(
-        periods_for_prompt,
-        args.api_key,
-        mock=args.mock,
-        mode=mode,
-        goal=args.goal,
-        current_week_data=current_week_data,
-        prev_week_data=prev_week_data,
-        current_week_num=current_week_num,
-        prev_report=prev_report,
-        volume_block=volume_block,
-        axial_load_exercises=axial_load_exercises,
-    )
-
-    # The system prompt now instructs the AI to respond directly in Spanish,
-    # so no separate translation call is needed (and it would waste ~4k tokens).
+    # For new-routine the prose analysis is skipped — only the structured weight
+    # suggestions table is sent. This also saves one Gemini API request.
+    if mode == "new-routine":
+        analysis = ""
+    else:
+        analysis = analyze(
+            periods_for_prompt,
+            args.api_key,
+            mock=args.mock,
+            mode=mode,
+            goal=args.goal,
+            current_week_data=current_week_data,
+            prev_week_data=prev_week_data,
+            current_week_num=current_week_num,
+            prev_report=prev_report,
+            volume_block=volume_block,
+            axial_load_exercises=axial_load_exercises,
+        )
 
     # For new-routine: get structured weight suggestions via separate Gemini call.
     if mode == "new-routine" and not args.mock:
