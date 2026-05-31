@@ -15,9 +15,11 @@ Nicolás's goal: {goal}.
 
 Write him a direct weekly check-in as his trainer. This is short-term, week-over-week — not a global analysis.
 
+STRUCTURE RULE: Organize the exercise-by-exercise section by training day. Use `### Día 1`, `### Día 2`, etc. as headings (one per day), then bullet points for each exercise under that day. Do not mix exercises from different days in a single list.
+
 Cover:
 - Overall: was this a better week than the last one? Be honest but constructive — if it was a tough week, say so clearly but frame it in terms of what it means going forward, not as a verdict.
-- Exercise by exercise: where did he improve (weight, reps, or both) and where did he drop or stall — with the actual numbers
+- Exercise by exercise (grouped by day): where did he improve (weight, reps, or both) and where did he drop or stall — with the actual numbers
 - Scientific read: what do these numbers suggest about fatigue, recovery, or adaptation? (e.g. is a drop a sign of fatigue or a real regression?)
 - One or two concrete things to focus on or adjust next week
 - If there's a previous analysis above: explicitly follow up on the recommendations you made last time — did he follow through? Did it work?
