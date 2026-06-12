@@ -11,11 +11,12 @@ Nicolás starts period 15/06/26-.... Goal: hipertrofia.
 ## Routine to prescribe weights for
 
 Day 1:
-  --- Superset: Abdominal recto largo + Abdominal bolita a dos piernas + Twist ruso + Espinales en colchoneta + Press de pecho con barra (banco plano) + Press de pecho con mancuernas (banco plano) ---
+  --- Superset: Abdominal recto largo + Abdominal bolita a dos piernas + Twist ruso + Espinales en colchoneta ---
     #1 Abdominal recto largo [3x8]
     #2 Abdominal bolita a dos piernas [3x8]
     #3 Twist ruso [3x8]
-    #4 Espinales en colchoneta [3x10]
+    #4 Espinales en colchoneta [3x10]  ← REST HERE
+  --- Superset: Press de pecho con barra (banco plano) + Press de pecho con mancuernas (banco plano) ---
     #5 Press de pecho con barra (banco plano) [3x6]
     #6 Press de pecho con mancuernas (banco plano) [3x8]  ← REST HERE
   #7 Press de pecho en Hammer [3x10]
@@ -25,11 +26,12 @@ Day 1:
     #10 Vuelos laterales con mancuernas [3x8]  ← REST HERE
 
 Day 2:
-  --- Superset: Abdominal recto largo + Abdominal bolita a dos piernas + Twist ruso + Espinales en colchoneta + Apertura con mancuerna en banco plano + Press de pecho con mancuernas (banco inclinado) ---
+  --- Superset: Abdominal recto largo + Abdominal bolita a dos piernas + Twist ruso + Espinales en colchoneta ---
     #1 Abdominal recto largo [3x8]
     #2 Abdominal bolita a dos piernas [3x8]
     #3 Twist ruso [3x8]
-    #4 Espinales en colchoneta [3x10]
+    #4 Espinales en colchoneta [3x10]  ← REST HERE
+  --- Superset: Apertura con mancuerna en banco plano + Press de pecho con mancuernas (banco inclinado) ---
     #5 Apertura con mancuerna en banco plano [3x6]
     #6 Press de pecho con mancuernas (banco inclinado) [3x8]  ← REST HERE
   #7 Peck Deck [3x10]
@@ -39,11 +41,12 @@ Day 2:
     #10 Press de hombros con barra en landmine (1 brazo) (arrodillado) [3x5]  ← REST HERE
 
 Day 3:
-  --- Superset: Abdominal recto largo + Abdominal bolita a dos piernas + Twist ruso + Espinales en colchoneta + Prensa Hammer 45° + Estocada al frente (total) ---
+  --- Superset: Abdominal recto largo + Abdominal bolita a dos piernas + Twist ruso + Espinales en colchoneta ---
     #1 Abdominal recto largo [3x8]
     #2 Abdominal bolita a dos piernas [3x8]
     #3 Twist ruso [3x8]
-    #4 Espinales en colchoneta [3x10]
+    #4 Espinales en colchoneta [3x10]  ← REST HERE
+  --- Superset: Prensa Hammer 45° + Estocada al frente (total) ---
     #5 Prensa Hammer 45° [3x6]
     #6 Estocada al frente (total) [3x10]  ← REST HERE
   #7 Extensión de rodillas en máquina [3x10]
@@ -54,11 +57,12 @@ Day 3:
   #11 Bíceps con barra (agarre supino) [3x10]
 
 Day 4:
-  --- Superset: Abdominal recto largo + Abdominal bolita a dos piernas + Twist ruso + Espinales en colchoneta + Sentadilla clásica + Peso muerto con mancuernas ---
+  --- Superset: Abdominal recto largo + Abdominal bolita a dos piernas + Twist ruso + Espinales en colchoneta ---
     #1 Abdominal recto largo [3x8]
     #2 Abdominal bolita a dos piernas [3x8]
     #3 Twist ruso [3x8]
-    #4 Espinales en colchoneta [3x10]
+    #4 Espinales en colchoneta [3x10]  ← REST HERE
+  --- Superset: Sentadilla clásica + Peso muerto con mancuernas ---
     #5 Sentadilla clásica [3x6]
     #6 Peso muerto con mancuernas [3x8]  ← REST HERE
   #7 Flexión de rodillas acostado [3x10]
@@ -75,8 +79,8 @@ Pesos de cierre por ejercicio (calculados por el script — usar como baseline):
   D1 Abdominal bolita a dos piernas [#2/10 del día]: sin historial exacto → equiv. biomecánico 'Abdominal recto largo (manos atras de la nuca)' (score 6/6, 18/05/26) → baseline ajustado 2.5 kg [2 semanas de datos]
   D1 Twist ruso [#3/10 del día]: 20/04/26 → 10.0 kg (era combinado) [4 semanas de datos]
   D1 Espinales en colchoneta [#4/10 del día]: 20/04/26 → 10.0 kg (era combinado) [4 semanas de datos]
-  D1 Press de pecho con barra (banco plano) [#5/10 del día]: sin historial exacto → equiv. biomecánico 'Press de pecho con barra en banco plano' (score 6/6, 20/04/26) → baseline ajustado 55.0 kg [4 semanas de datos]
-  D1 Press de pecho con mancuernas (banco plano) [#6/10 del día]: sin historial exacto → patrón equiv. 'press de pecho con barra en banco plano' (20/04/26) → baseline ajustado 50.0 kg [4 semanas de datos]
+  D1 Press de pecho con barra (banco plano) [#5/10 del día]: 20/04/26 → 55.0 kg (era combinado) [4 semanas de datos]
+  D1 Press de pecho con mancuernas (banco plano) [#6/10 del día]: 23/02/26 → 24.0 kg (era combinado) [4 semanas de datos]
   D1 Press de pecho en Hammer [#7/10 del día]: 27/03/26 → 55.0 kg [4 semanas de datos]
   D1 Triceps con polea (agarre prono) [#8/10 del día]: 18/05/26 → 35.0 kg [4 semanas de datos]
   D1 Remo al mentón [#9/10 del día]: 23/02/26 → 28.3 kg (era combinado) [4 semanas de datos]
@@ -86,7 +90,7 @@ Pesos de cierre por ejercicio (calculados por el script — usar como baseline):
   D2 Twist ruso [#3/10 del día]: 20/04/26 → 10.0 kg (era combinado) [4 semanas de datos]
   D2 Espinales en colchoneta [#4/10 del día]: 20/04/26 → 10.0 kg (era combinado) [4 semanas de datos]
   D2 Apertura con mancuerna en banco plano [#5/10 del día]: 20/04/26 → 12.5 kg (era combinado) [4 semanas de datos]
-  D2 Press de pecho con mancuernas (banco inclinado) [#6/10 del día]: sin historial exacto → patrón equiv. 'press de pecho con barra en banco inclinado' (10/11/25) → baseline ajustado 45.0 kg [4 semanas de datos]
+  D2 Press de pecho con mancuernas (banco inclinado) [#6/10 del día]: 10/11/25 → 16.0 kg (era combinado) [4 semanas de datos]
   D2 Peck Deck [#7/10 del día]: 18/05/26 → 77.5 kg [4 semanas de datos]
   D2 Fondo de tríceps en máquina [#8/10 del día]: sin historial exacto → equiv. biomecánico 'Triceps con polea (agarre prono)' (score 0/6, 18/05/26) → baseline ajustado 35.0 kg [4 semanas de datos]
   D2 Press militar parado con barra [#9/10 del día]: 20/04/26 → 33.8 kg (era combinado) [4 semanas de datos]

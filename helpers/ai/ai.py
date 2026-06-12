@@ -231,6 +231,25 @@ _EXERCISE_ALIASES_RAW = {
         "Abdominal recto largo en banco isométrico",
     ],
     # ── Chest push ───────────────────────────────────────────────────────────
+    # Both "(banco plano)" and "en banco plano" naming conventions have been
+    # used across different routine generations — canonicalise to parenthesised form.
+    "Press de pecho con barra (banco plano)": [
+        "Press de pecho con barra en banco plano",
+    ],
+    "Press de pecho con barra (banco inclinado)": [
+        "Press de pecho con barra en banco inclinado",
+    ],
+    # Dumbbell chest press — "Press plano con mancuernas" was the historical name
+    # before the current "(banco plano)" convention was adopted.
+    "Press de pecho con mancuernas (banco plano)": [
+        "Press plano con mancuernas",
+        "Press plano con mancuerna (alternado + simétrico)",
+        "Press de pecho con mancuernas en banco plano",
+    ],
+    "Press de pecho con mancuernas (banco inclinado)": [
+        "Press inclinado con mancuernas",
+        "Press de pecho con mancuernas en banco inclinado",
+    ],
     "Empuje de pecho con barra en banco plano": [
         "Press plano con barra",
         "Press plano con barra (toma cerrada)",
