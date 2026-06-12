@@ -655,65 +655,90 @@ def _compute_settled_weights(new_period: dict, prior_periods: list) -> str:
     return "\n".join(lines)
 
 
-def _build_day_index(day_data: dict) -> dict:
+def _build_global_index(new_period: dict) -> dict:
     """
-    Builds a flat {pos: name} index for all exercises in a single day (1-indexed).
-    This is the single source of truth for #N references in indexed prompts.
+    Builds a {pos: name} index for all UNIQUE exercises across all days (1-indexed).
+
+    Exercises are numbered in order of first appearance (Day 1 first, then Day 2, etc.).
+    Repeated exercises — e.g. the abdomen triset that appears in every day — receive a
+    single entry and the same #N key is reused wherever that exercise appears.
+
+    This is the single source of truth for #N references in the weight-suggestions prompt.
     """
-    return {i: ex["name"] for i, ex in enumerate(day_data["exercises"], 1)}
+    index: dict = {}
+    name_to_pos: dict = {}
+    pos = 1
+    for day_data in new_period["days"]:
+        for ex in day_data["exercises"]:
+            name = ex["name"]
+            if name not in name_to_pos:
+                index[pos] = name
+                name_to_pos[name] = pos
+                pos += 1
+    return index
 
 
-def _render_day_index_block(index: dict) -> str:
-    """Renders the exercise index as a numbered list for the top of a day's prompt."""
+def _render_global_index_block(index: dict) -> str:
+    """Renders the global exercise index as a numbered list."""
     lines = ["Exercise index:"]
     for pos in sorted(index):
         lines.append(f"  #{pos:<3} {index[pos]}")
     return "\n".join(lines)
 
 
-def _render_day_structure_indexed(day_data: dict, index: dict) -> str:
+def _render_period_structure_indexed(new_period: dict, index: dict) -> str:
     """
-    Renders one day's exercise structure using #N keys from the index.
-    Superset headers reference exercises by key; exercise lines show key + rep scheme.
-    No exercise name appears in this block — the index provides the mapping.
+    Renders all days' exercise structure using global #N keys.
+    Exercise names never appear in this block — the index provides the mapping.
+    Repeated exercises (e.g. abdomen in every day) use the same key each time.
     """
     name_to_pos = {name: pos for pos, name in index.items()}
     lines = []
-    groups = _group_combined_exercises(day_data["exercises"])
-    pos = 1
-    for group in groups:
-        if group["comb"]:
-            keys = [f"#{name_to_pos[ex['name']]}" for ex in group["exercises"]]
-            lines.append(f"  --- Superset: {' + '.join(keys)} ---")
-            for i, ex in enumerate(group["exercises"]):
-                suffix = _reps_suffix_for_ex(ex)
-                rest = "  ← REST HERE" if i == len(group["exercises"]) - 1 else ""
-                lines.append(f"    #{pos}{suffix}{rest}")
-                pos += 1
-        else:
-            ex = group["exercises"][0]
-            lines.append(f"  #{pos}{_reps_suffix_for_ex(ex)}")
-            pos += 1
+    for day_data in new_period["days"]:
+        lines.append(f"Day {day_data['day']}:")
+        groups = _group_combined_exercises(day_data["exercises"])
+        for group in groups:
+            if group["comb"]:
+                keys = [f"#{name_to_pos[ex['name']]}" for ex in group["exercises"]]
+                lines.append(f"  --- Superset: {' + '.join(keys)} ---")
+                for i, ex in enumerate(group["exercises"]):
+                    suffix = _reps_suffix_for_ex(ex)
+                    rest   = "  ← REST HERE" if i == len(group["exercises"]) - 1 else ""
+                    lines.append(f"    #{name_to_pos[ex['name']]}{suffix}{rest}")
+            else:
+                ex = group["exercises"][0]
+                lines.append(f"  #{name_to_pos[ex['name']]}{_reps_suffix_for_ex(ex)}")
+        lines.append("")
     return "\n".join(lines)
 
 
-def _render_day_settled_weights_indexed(
-    day_data: dict,
+def _render_global_settled_weights_indexed(
+    new_period: dict,
     prior_periods: list,
     index: dict,
 ) -> str:
     """
-    Renders the settled weights block for one day using #N keys.
-    Each line: '  #N: <weight_resolution>'
-    Avoids repeating exercise names since the index already maps #N → name.
+    Renders settled weights for all unique exercises using global #N keys.
+
+    Each unique exercise appears exactly ONCE regardless of how many days it
+    appears in — repeats (e.g. abdomen) share a single weight entry.
     """
     from helpers.catalog.matcher import load_shared_catalog
 
     lookup, flat_best = _build_history_lookup(prior_periods)
-    shared_catalog = load_shared_catalog()
+    shared_catalog    = load_shared_catalog()
+
+    # Collect first occurrence of each unique exercise (preserves is_comb context)
+    first_occurrence: dict = {}
+    for day_data in new_period["days"]:
+        for ex in day_data["exercises"]:
+            if ex["name"] not in first_occurrence:
+                first_occurrence[ex["name"]] = ex
 
     lines = ["Baseline weights per exercise:"]
-    for pos, ex in enumerate(day_data["exercises"], 1):
+    for pos in sorted(index):
+        name    = index[pos]
+        ex      = first_occurrence[name]
         new_is_c = ex.get("is_comb", False)
         weight_line = _resolve_exercise_weight(ex, new_is_c, lookup, flat_best, shared_catalog)
         lines.append(f"  #{pos}: {weight_line}")
@@ -1311,20 +1336,36 @@ def build_weight_suggestions_prompt(
     prior_periods: list,
     goal: str = "hipertrofia",
     axial_load_exercises: list = None,
-) -> list:
+) -> tuple:
     """
-    Builds one (system_prompt, user_prompt) pair per day in new_period.
-    Returns a list of (system, user) tuples — one per day.
+    Build the (system_prompt, user_prompt) pair for the weight suggestions call.
 
-    Each day's prompt uses a compact flat #N index so exercise names are
-    defined once (in the index block) and referenced as #N everywhere else.
-    This reduces token count while keeping the prompt unambiguous for the LLM.
+    Uses a global #N index covering all unique exercises across all days.
+    Repeated exercises (e.g. the abdomen triset in every day) are defined once
+    in the index and referenced by the same key throughout the prompt — no
+    redundant name repetition.
 
-    Splitting into per-day calls also reduces context length per AI invocation
-    and prevents the model from mixing up exercises across different days.
+    Returns a single (system, user) tuple. One AI call covers the full routine.
     """
     template_path = TEMPLATES_DIR / "weight-suggestions.txt"
     template = template_path.read_text(encoding="utf-8") if template_path.exists() else ""
+
+    index         = _build_global_index(new_period)
+    index_block   = _render_global_index_block(index)
+    structure_block = _render_period_structure_indexed(new_period, index)
+    routine_block = f"{index_block}\n\n{structure_block}"
+
+    settled_block = _render_global_settled_weights_indexed(new_period, prior_periods, index)
+    axial_str     = ", ".join(axial_load_exercises) if axial_load_exercises else "ninguno detectado"
+    period_label  = new_period.get("period", "")
+
+    user_prompt = template.format(
+        routine=routine_block,
+        settled_weights_block=settled_block,
+        axial_load_exercises=axial_str,
+        period=period_label,
+        goal=goal,
+    )
 
     system_prompt = (
         "Sos un entrenador de Powerbuilding de élite y analista de rendimiento deportivo. "
@@ -1339,37 +1380,7 @@ def build_weight_suggestions_prompt(
         "un 10% e indicás la advertencia en el campo 'progression_analysis'."
     )
 
-    period_label = new_period.get("period", "")
-    axial_set = set(axial_load_exercises or [])
-    total_days = len(new_period["days"])
-    prompts = []
-
-    for day_data in new_period["days"]:
-        day_num = day_data["day"]
-        index = _build_day_index(day_data)
-
-        index_block = _render_day_index_block(index)
-        structure_block = _render_day_structure_indexed(day_data, index)
-        routine_block = f"{index_block}\n\n{structure_block}"
-
-        settled_block = _render_day_settled_weights_indexed(day_data, prior_periods, index)
-
-        day_axial = [ex["name"] for ex in day_data["exercises"] if ex["name"] in axial_set]
-        axial_str = ", ".join(day_axial) if day_axial else "ninguno detectado"
-
-        user_prompt = template.format(
-            routine=routine_block,
-            settled_weights_block=settled_block,
-            axial_load_exercises=axial_str,
-            period=period_label,
-            goal=goal,
-        )
-
-        user_prompt = f"Day {day_num} of {total_days}.\n\n" + user_prompt
-
-        prompts.append((system_prompt, user_prompt))
-
-    return prompts
+    return system_prompt, user_prompt
 
 
 def get_weight_suggestions(
@@ -1380,64 +1391,58 @@ def get_weight_suggestions(
     axial_load_exercises: list = None,
 ) -> list:
     """
-    Makes one structured Gemini call per day to get weight suggestions.
+    Makes a single structured Gemini call to get weight suggestions for a new routine.
 
-    build_weight_suggestions_prompt() now returns one (system, user) tuple
-    per day. This function loops over them, calls Gemini for each, and merges
-    the results into a single flat list — same shape as before so the rest of
-    the pipeline (validate_suggestions, write_suggestions_to_sheet) is unchanged.
+    Uses build_weight_suggestions_prompt() which produces one unified prompt with
+    a global #N exercise index. Returns a flat list of weight suggestion dicts —
+    same shape as before so validate_suggestions and write_suggestions_to_sheet
+    work unchanged.
     """
-    day_prompts = build_weight_suggestions_prompt(
+    system, prompt = build_weight_suggestions_prompt(
         new_period, prior_periods, goal=goal, axial_load_exercises=axial_load_exercises
     )
 
     client = genai.Client(api_key=api_key)
 
-    log_dir = Path(__file__).parent.parent.parent / "logs"
+    log_dir  = Path(__file__).parent.parent.parent / "logs"
     log_dir.mkdir(exist_ok=True)
     log_path = log_dir / f"gemini_{datetime.now().strftime('%Y%m%d')}.log"
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with open(log_path, "a", encoding="utf-8") as f:
+        f.write(f"\n{'='*80}\n")
+        f.write(f"[{timestamp}] MODEL: {MODEL_STRUCTURED} [STRUCTURED]\n")
+        f.write(f"--- WEIGHT SUGGESTIONS PROMPT ({len(prompt)} chars) ---\n")
+        f.write(prompt + "\n")
 
-    all_items = []
-    for day_idx, (system, prompt) in enumerate(day_prompts, 1):
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        with open(log_path, "a", encoding="utf-8") as f:
-            f.write(f"\n{'='*80}\n")
-            f.write(f"[{timestamp}] MODEL: {MODEL_STRUCTURED} [STRUCTURED] Day {day_idx}/{len(day_prompts)}\n")
-            f.write(f"--- WEIGHT SUGGESTIONS PROMPT ({len(prompt)} chars) ---\n")
-            f.write(prompt + "\n")
+    print(f"  Sending [weight-suggestions] prompt to Gemini ({MODEL_STRUCTURED})...", flush=True)
 
-        print(f"  Sending [weight-suggestions] Day {day_idx}/{len(day_prompts)} to Gemini ({MODEL_STRUCTURED})...", flush=True)
-
-        for attempt in range(2):
-            try:
-                response = client.models.generate_content(
-                    model=MODEL_STRUCTURED,
-                    config=types.GenerateContentConfig(
-                        system_instruction=system,
-                        temperature=0.1,
-                        response_mime_type="application/json",
-                        response_schema=WeightSuggestionList,
-                    ),
-                    contents=prompt,
-                )
-                items = response.parsed.root
-                with open(log_path, "a", encoding="utf-8") as f:
-                    f.write(f"--- STRUCTURED RESPONSE ({len(items)} items) ---\n")
-                    for item in items:
-                        f.write(f"  {item.model_dump()}\n")
-                all_items.extend([item.model_dump() for item in items])
-                break
-            except Exception as e:
-                err = str(e)
-                with open(log_path, "a", encoding="utf-8") as f:
-                    f.write(f"--- ERROR (attempt {attempt+1}) ---\n{err}\n")
-                if ("429" in err or "RESOURCE_EXHAUSTED" in err or "503" in err or "UNAVAILABLE" in err) and attempt == 0:
-                    print("  Temporary error — waiting 65s and retrying...")
-                    time.sleep(65)
-                    continue
-                raise
-
-    return all_items
+    for attempt in range(2):
+        try:
+            response = client.models.generate_content(
+                model=MODEL_STRUCTURED,
+                config=types.GenerateContentConfig(
+                    system_instruction=system,
+                    temperature=0.1,
+                    response_mime_type="application/json",
+                    response_schema=WeightSuggestionList,
+                ),
+                contents=prompt,
+            )
+            items: list[WeightSuggestion] = response.parsed.root
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(f"--- STRUCTURED RESPONSE ({len(items)} items) ---\n")
+                for item in items:
+                    f.write(f"  {item.model_dump()}\n")
+            return [item.model_dump() for item in items]
+        except Exception as e:
+            err = str(e)
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(f"--- ERROR (attempt {attempt+1}) ---\n{err}\n")
+            if ("429" in err or "RESOURCE_EXHAUSTED" in err or "503" in err or "UNAVAILABLE" in err) and attempt == 0:
+                print("  Temporary error — waiting 65s and retrying...")
+                time.sleep(65)
+                continue
+            raise
 
 
 def translate_to_spanish(text: str, api_key: str) -> str:
