@@ -44,9 +44,9 @@ TEMPLATES_DIR = Path(__file__).parent.parent.parent / "templates"
 # Hardcoded fallback prompts (used when the template file is missing)
 # ---------------------------------------------------------------------------
 
-_DEFAULT_SYSTEM = """You are Nicolás's personal trainer. You have been training him for months and know his history, his progress, and his tendencies. You write directly to him, in first person, as if you were messaging him after reviewing his training data.
+_DEFAULT_SYSTEM = """You are Nicolás' personal trainer. You have been training him for months and know his history, his progress, and his tendencies. You write directly to him, in first person, as if you were messaging him after reviewing his training data.
 
-**Always respond in Spanish (Argentina). Never mix languages.**
+**Always respond in Spanish (Argentina). Never mix languages. Use local gym slang naturally (ej: "ir al fallo", "series efectivas", "cargar la barra", "parate", "tirón") without being forced.**
 
 Your tone is warm, direct, and motivating — like a good trainer who tells you the truth but always with encouragement. You celebrate real progress, point out plateaus clearly without being dramatic about it, and give concrete advice for what to do next. You never use filler phrases or generic observations — every comment is backed by specific numbers from the data. Avoid catastrophizing or using dramatic language — a tough week is just data, not a verdict.
 
@@ -63,6 +63,11 @@ How to interpret the data:
 - Cell notes (marked as "Note:") are observations or instructions from the coach — take them into account in the analysis.
 - When comparing weights across periods, data is always ordered oldest → most recent. More weight in a more recent period = progress. Less weight in a more recent period = regression. Never describe a decrease in weight as an improvement.
 - The weight shown per period is the **settled weight** (last week's average), not the peak. Week 1 is often a discovery week where Nicolás tries a weight and may overshoot — subsequent weeks settle to what's actually sustainable. Always base suggestions on the settled weight, never on a single high outlier week.
+
+Structure your response as a direct message:
+1. A brief, punchy greeting evaluating the overall week/day.
+2. Specific bullet points highlighting key exercises: where there was solid progressive overload (more weight) and where there was a plateau or drop that needs attention (adjusting weight or rest). Always mention the exact numbers.
+3. A concrete takeaway/instruction for the next time he faces this specific day.
 
 Nicolás's goal: {goal}."""
 
@@ -446,8 +451,16 @@ def _transfer_factor(src_name: str, dst_name: str) -> float:
 def _compute_settled_weights(new_period: dict, prior_periods: list) -> str:
     """
     For each exercise in new_period, find its most recent settled weight from
-    prior_periods using normalized name matching, with biomechanical pattern
-    fallback when no exact name match exists.
+    prior_periods using normalized name matching, with biomechanical fallback
+    when no exact name match exists.
+
+    Fallback chain (in order):
+      1. Exact canonical/alias name match
+      2. Partial name match (prefix — e.g. "Dominada" matches "Dominada estricta")
+      3. Catalog-based biomechanical match (shared catalog, patron_principal gate +
+         mecanica/vector/estabilizacion scoring — see helpers/catalog/matcher.py)
+      4. Regex archetype match (local _ARCHETYPES patterns — catches cases not in
+         the shared catalog)
 
     Shows the most recent entry AND (if it has fewer than 3 weeks of data) also
     the most complete entry so the AI has reliable baselines when a recent period
@@ -457,13 +470,16 @@ def _compute_settled_weights(new_period: dict, prior_periods: list) -> str:
     to parse exercise names from raw history text.
     """
     import re
+    # Lazy import to avoid circular dependency; matcher is a sibling package.
+    from helpers.catalog.matcher import find_closest_exercise, load_shared_catalog
 
     def strip_parens(s):
         return re.sub(r"\s*\(.*?\)", "", s).strip()
 
-    # Build lookup: (normalized_name, is_comb) → [(period_label, settled, n_weeks, is_comb)]
+    # ── Build name-keyed lookup from history ───────────────────────────────────
+    # lookup: (normalized_name, is_comb) → [(period_label, settled, n_weeks, is_comb)]
     # Keying by is_comb ensures isolated and combined weights are never cross-compared.
-    # ordered from most recent (prior_periods[0]) to oldest
+    # Ordered from most recent (prior_periods[0]) to oldest.
     lookup: dict = {}
     for period_data in prior_periods:
         period_label = period_data["period"][:8]
@@ -480,6 +496,29 @@ def _compute_settled_weights(new_period: dict, prior_periods: list) -> str:
                 if canon_key != raw_key:
                     lookup.setdefault((canon_key, is_c), []).append(entry)
 
+    # ── Build flat history list for catalog-based biomechanical matching ───────
+    # Keyed by (original_name, is_comb) to deduplicate across days/periods;
+    # keeps the entry with the most weeks of data as the best reference.
+    _flat_best: dict = {}
+    for period_data in prior_periods:
+        for day_data in period_data["days"]:
+            for ex in day_data["exercises"]:
+                n_weeks, settled = _last_settled_weeks(ex)
+                if settled is None:
+                    continue
+                key = (ex["name"], ex.get("is_comb", False))
+                prev = _flat_best.get(key)
+                if prev is None or n_weeks > prev["n_weeks"]:
+                    _flat_best[key] = {
+                        "name":         ex["name"],
+                        "settled_peso": settled,
+                        "n_weeks":      n_weeks,
+                        "period":       period_data["period"][:8],
+                        "is_comb":      ex.get("is_comb", False),
+                    }
+    shared_catalog = load_shared_catalog()
+
+    # ── Build output lines ─────────────────────────────────────────────────────
     lines = ["Pesos de cierre por ejercicio (calculados por el script — usar como baseline):"]
     for day_data in new_period["days"]:
         day_num  = day_data["day"]
@@ -489,18 +528,18 @@ def _compute_settled_weights(new_period: dict, prior_periods: list) -> str:
             canon_key = _canonical_key(ex["name"])
             new_is_c  = ex.get("is_comb", False)
             pos_note  = f" [#{pos}/{n_in_day} del día]"
-            # Try canonical key first (alias resolution), then raw key — always same is_comb
+
+            # Step 1 — exact canonical/alias match (same is_comb context)
             entries = lookup.get((canon_key, new_is_c)) or lookup.get((raw_key, new_is_c))
             isolated_fallback = False
-            # If combined and no match found, fall back to isolated history as reference point
             if not entries and new_is_c:
+                # Combined exercise with no combined history → use isolated as reference
                 entries = lookup.get((canon_key, False)) or lookup.get((raw_key, False))
                 if entries:
                     isolated_fallback = True
             key = canon_key  # used for partial/archetype fallback below
 
             if entries:
-                # ── Exact name match ──────────────────────────────────────────
                 most_recent = entries[0]
                 p_label, settled, n_weeks, is_c = most_recent
                 comb_note  = " (era combinado)" if is_c else ""
@@ -512,8 +551,7 @@ def _compute_settled_weights(new_period: dict, prior_periods: list) -> str:
                 else:
                     line = (f"  D{day_num} {ex['name']}{pos_note}: {p_label} → {settled:.1f} kg"
                             f"{comb_note}{weeks_note}")
-
-                # If most recent is sparse (<3 weeks), also show the most complete entry
+                # Supplement sparse recent entries with the most complete one
                 if n_weeks < 3 and len(entries) > 1:
                     best = max(entries[1:], key=lambda e: e[2])
                     if best[2] > n_weeks:
@@ -522,57 +560,77 @@ def _compute_settled_weights(new_period: dict, prior_periods: list) -> str:
                         line += (f" | referencia más completa: {b_label} → "
                                  f"{b_settled:.1f} kg [{b_weeks} semanas]{b_comb_note}")
                 lines.append(line)
+                continue
 
-            else:
-                # ── Partial name match (e.g. "Dominada" matches "Dominada estricta") ──
-                partial_entries = None
+            # Step 2 — partial name match (prefix)
+            partial_entries = None
+            for (hist_key, hist_is_c), hist_entries in lookup.items():
+                if hist_is_c == new_is_c and (key.startswith(hist_key) or hist_key.startswith(key)):
+                    partial_entries = hist_entries
+                    break
+
+            if partial_entries:
+                most_recent = partial_entries[0]
+                p_label, settled, n_weeks, is_c = most_recent
+                comb_note  = " (era combinado)" if is_c else ""
+                weeks_note = f" [{n_weeks} semanas de datos]"
+                line = (f"  D{day_num} {ex['name']}{pos_note}: {p_label} → {settled:.1f} kg"
+                        f"{comb_note}{weeks_note}")
+                if n_weeks < 3 and len(partial_entries) > 1:
+                    best = max(partial_entries[1:], key=lambda e: e[2])
+                    if best[2] > n_weeks:
+                        b_label, b_settled, b_weeks, b_comb = best
+                        b_comb_note = " (era combinado)" if b_comb else ""
+                        line += (f" | referencia más completa: {b_label} → "
+                                 f"{b_settled:.1f} kg [{b_weeks} semanas]{b_comb_note}")
+                lines.append(line)
+                continue
+
+            # Step 3 — catalog-based biomechanical match (richer scoring)
+            flat_history = [v for v in _flat_best.values() if v["is_comb"] == new_is_c]
+            cat_match, cat_score = find_closest_exercise(ex["name"], flat_history, shared_catalog)
+
+            if cat_match is not None and cat_score >= 0:
+                factor   = _transfer_factor(cat_match["name"], ex["name"])
+                adjusted = round(cat_match["settled_peso"] * factor / 2.5) * 2.5
+                lines.append(
+                    f"  D{day_num} {ex['name']}{pos_note}: sin historial exacto → "
+                    f"equiv. biomecánico '{cat_match['name']}' "
+                    f"(score {cat_score}/6, {cat_match['period']}) "
+                    f"→ baseline ajustado {adjusted:.1f} kg "
+                    f"[{cat_match['n_weeks']} semanas de datos]"
+                )
+                continue
+
+            # Step 4 — regex archetype fallback (covers exercises absent from shared catalog)
+            archetype  = _get_archetype(ex["name"])
+            arch_match = None  # (period_label, src_name, adjusted_weight, n_weeks, factor)
+
+            if archetype:
                 for (hist_key, hist_is_c), hist_entries in lookup.items():
-                    if hist_is_c == new_is_c and (key.startswith(hist_key) or hist_key.startswith(key)):
-                        partial_entries = hist_entries
-                        break
+                    if hist_is_c != new_is_c:
+                        continue  # never cross isolated ↔ combined
+                    if _get_archetype(hist_key) == archetype:
+                        candidate = hist_entries[0]
+                        p_label, settled, n_weeks, _ = candidate
+                        factor   = _transfer_factor(hist_key, ex["name"])
+                        adjusted = round(settled * factor / 2.5) * 2.5
+                        if arch_match is None or n_weeks > arch_match[3]:
+                            arch_match = (p_label, hist_key, adjusted, n_weeks, factor)
 
-                if partial_entries:
-                    most_recent = partial_entries[0]
-                    p_label, settled, n_weeks, is_c = most_recent
-                    comb_note  = " (era combinado)" if is_c else ""
-                    weeks_note = f" [{n_weeks} semanas de datos]"
-                    line = (f"  D{day_num} {ex['name']}{pos_note}: {p_label} → {settled:.1f} kg"
-                            f"{comb_note}{weeks_note}")
-                    if n_weeks < 3 and len(partial_entries) > 1:
-                        best = max(partial_entries[1:], key=lambda e: e[2])
-                        if best[2] > n_weeks:
-                            b_label, b_settled, b_weeks, b_comb = best
-                            b_comb_note = " (era combinado)" if b_comb else ""
-                            line += (f" | referencia más completa: {b_label} → "
-                                     f"{b_settled:.1f} kg [{b_weeks} semanas]{b_comb_note}")
-                    lines.append(line)
+            if arch_match:
+                p_label, src_name, adjusted, n_weeks, factor = arch_match
+                lines.append(
+                    f"  D{day_num} {ex['name']}{pos_note}: sin historial exacto → "
+                    f"patrón equiv. '{src_name}' ({p_label}) "
+                    f"→ baseline ajustado {adjusted:.1f} kg [{n_weeks} semanas de datos]"
+                )
+            else:
+                lines.append(
+                    f"  D{day_num} {ex['name']}{pos_note}: "
+                    f"sin historial previo (ejercicio nuevo sin equivalente)"
+                )
 
-                else:
-                    # ── Biomechanical pattern fallback ────────────────────────
-                    archetype = _get_archetype(ex["name"])
-                    best_match = None  # (period_label, src_name, adjusted_weight, n_weeks, factor)
-
-                    if archetype:
-                        for (hist_key, hist_is_c), hist_entries in lookup.items():
-                            if hist_is_c != new_is_c:
-                                continue  # never cross isolated ↔ combined
-                            if _get_archetype(hist_key) == archetype:
-                                candidate = hist_entries[0]
-                                p_label, settled, n_weeks, _ = candidate
-                                factor = _transfer_factor(hist_key, ex["name"])
-                                adjusted = round(settled * factor / 2.5) * 2.5
-                                if best_match is None or n_weeks > best_match[3]:
-                                    best_match = (p_label, hist_key, adjusted, n_weeks, factor)
-
-                    if best_match:
-                        p_label, src_name, adjusted, n_weeks, factor = best_match
-                        lines.append(
-                            f"  D{day_num} {ex['name']}{pos_note}: sin historial exacto → "
-                            f"ejercicio equiv. '{src_name}' ({p_label}) "
-                            f"→ baseline ajustado {adjusted:.1f} kg [{n_weeks} semanas de datos]"
-                        )
-                    else:
-                        lines.append(f"  D{day_num} {ex['name']}{pos_note}: sin historial previo (ejercicio nuevo sin equivalente)")
     return "\n".join(lines)
 
 def get_settled_weights_dict(new_period: dict, prior_periods: list) -> dict:
@@ -1034,31 +1092,37 @@ Yes, overall. 4 out of 6 main exercises improved in weight or reps.
 # Public API
 # ---------------------------------------------------------------------------
 
-def get_weight_suggestions(
+def build_weight_suggestions_prompt(
     new_period: dict,
     prior_periods: list,
-    api_key: str,
     goal: str = "hipertrofia",
     axial_load_exercises: list = None,
-) -> list[dict]:
+) -> tuple:
     """
-    Makes a separate structured Gemini call to get weight suggestions for a new routine.
+    Build the (system_prompt, user_prompt) pair for the weight suggestions call.
 
-    Uses response_schema=List[WeightSuggestion] so Gemini is forced to produce
-    valid typed JSON at the token level — no regex parsing, no hallucinated formats.
+    Extracted from get_weight_suggestions() so it can be used independently
+    (e.g., for --print-prompt dry-run mode where the caller inspects the prompts
+    without sending them to the AI).
 
-    Returns a list of dicts (same shape as parse_suggestions output) so the
-    rest of the pipeline (validate_suggestions, write_suggestions_to_sheet) works unchanged.
+    Args:
+        new_period:           The active period dict (structure only, no real data yet).
+        prior_periods:        List of completed period dicts for historical context.
+        goal:                 Training objective string (e.g. "hipertrofia").
+        axial_load_exercises: List of exercise names with spinal axial load.
+
+    Returns:
+        (system_prompt, user_prompt) — both strings ready to pass to the AI.
     """
     template_path = TEMPLATES_DIR / "weight-suggestions.txt"
     template = template_path.read_text(encoding="utf-8") if template_path.exists() else ""
 
-    routine_block  = _format_routine_structure(new_period)
-    settled_block  = _compute_settled_weights(new_period, prior_periods)
-    axial_str      = ", ".join(axial_load_exercises) if axial_load_exercises else "ninguno detectado"
-    period_label   = new_period.get("period", "")
+    routine_block = _format_routine_structure(new_period)
+    settled_block = _compute_settled_weights(new_period, prior_periods)
+    axial_str     = ", ".join(axial_load_exercises) if axial_load_exercises else "ninguno detectado"
+    period_label  = new_period.get("period", "")
 
-    prompt = template.format(
+    user_prompt = template.format(
         routine=routine_block,
         settled_weights_block=settled_block,
         axial_load_exercises=axial_str,
@@ -1066,8 +1130,7 @@ def get_weight_suggestions(
         goal=goal,
     )
 
-    client = genai.Client(api_key=api_key)
-    system = (
+    system_prompt = (
         "Sos un entrenador de Powerbuilding de élite y analista de rendimiento deportivo. "
         "Analizás números con frialdad matemática. "
         "Hablás con voseo argentino. "
@@ -1079,6 +1142,34 @@ def get_weight_suggestions(
         "Si hay notas de dolor o molestia en el historial de un ejercicio, penalizás el peso sugerido un 10% "
         "e indicás la advertencia en el campo 'progression_analysis'."
     )
+
+    return system_prompt, user_prompt
+
+
+def get_weight_suggestions(
+    new_period: dict,
+    prior_periods: list,
+    api_key: str,
+    goal: str = "hipertrofia",
+    axial_load_exercises: list = None,
+) -> list:
+    """
+    Makes a separate structured Gemini call to get weight suggestions for a new routine.
+
+    Delegates prompt construction to build_weight_suggestions_prompt() and then
+    sends both prompts to Gemini with a structured JSON response schema.
+
+    Uses response_schema=List[WeightSuggestion] so Gemini is forced to produce
+    valid typed JSON at the token level — no regex parsing, no hallucinated formats.
+
+    Returns a list of dicts (same shape as parse_suggestions output) so the
+    rest of the pipeline (validate_suggestions, write_suggestions_to_sheet) works unchanged.
+    """
+    system, prompt = build_weight_suggestions_prompt(
+        new_period, prior_periods, goal=goal, axial_load_exercises=axial_load_exercises
+    )
+
+    client = genai.Client(api_key=api_key)
 
     log_dir  = Path(__file__).parent.parent.parent / "logs"
     log_dir.mkdir(exist_ok=True)

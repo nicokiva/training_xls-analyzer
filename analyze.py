@@ -46,7 +46,7 @@ from pathlib import Path       # Path is the modern way to handle file paths in 
 from dotenv import load_dotenv  # third-party: reads .env file into environment variables
 
 from helpers.reader import get_service, get_write_service, load_all_periods, get_latest_week_indices, extract_week_data, get_active_period, get_last_completed_period, get_all_open_periods, rename_tab, is_active_period
-from helpers.ai import analyze, get_settled_weights_dict, get_weight_suggestions
+from helpers.ai import analyze, get_settled_weights_dict, get_weight_suggestions, build_weight_suggestions_prompt
 from helpers.mailer import send_analysis
 from helpers.events import consume_pending_events, mark_event_processed
 from helpers.writer import strip_suggestions_block, write_suggestions_to_sheet, format_suggestions_for_email, validate_suggestions
@@ -263,6 +263,28 @@ def run_analysis(mode, args, service, periods, periods_override=None, return_onl
         volume_block = format_volume_block(volume)
         axial_load_exercises = get_axial_load_exercises(all_exercise_names, catalog)
 
+    # --print-prompt: build and save the weight-suggestions prompt, then exit.
+    # No AI call, no email — use this to inspect the prompt before spending tokens.
+    if mode == "new-routine" and getattr(args, "print_prompt", False):
+        prior_for_suggestions = periods[1:] if len(periods) > 1 else []
+        system_prompt, user_prompt = build_weight_suggestions_prompt(
+            target_period,
+            prior_for_suggestions,
+            goal=args.goal,
+            axial_load_exercises=axial_load_exercises,
+        )
+        output = (
+            f"# SYSTEM PROMPT\n\n{system_prompt}\n\n"
+            f"{'─' * 80}\n\n"
+            f"# USER PROMPT\n\n{user_prompt}"
+        )
+        ANALYSES_DIR.mkdir(exist_ok=True)
+        out_path = ANALYSES_DIR / f"prompt_new-routine_{datetime.now().strftime('%Y%m%d')}.txt"
+        out_path.write_text(output, encoding="utf-8")
+        print(output)
+        print(f"\n[new-routine] Prompt saved to: {out_path}")
+        return True
+
     # For new-routine the prose analysis is skipped — only the structured weight
     # suggestions table is sent. This also saves one Gemini API request.
     if mode == "new-routine":
@@ -356,6 +378,12 @@ def main():
     parser.add_argument("--mock",           action="store_true")
     parser.add_argument("--force",          action="store_true",
                         help="Skip the 'no changes' check and always run the analysis")
+    # --print-prompt: for new-routine only. Builds and saves the weight-suggestions
+    # prompt to analyses/prompt_new-routine_YYYYMMDD.txt and prints it to stdout.
+    # Does NOT call the AI or send any email — use this to inspect prompts before
+    # spending tokens.
+    parser.add_argument("--print-prompt",   action="store_true",
+                        help="(new-routine only) Print the assembled prompt and exit without calling the AI")
     parser.add_argument("--max-periods",    type=int, default=None)
     parser.add_argument("--target-period",  default=None,
                         help="Tab name to use as target period for monthly/new-routine, e.g. '20/04/26-15/05/26'")
