@@ -267,23 +267,30 @@ def run_analysis(mode, args, service, periods, periods_override=None, return_onl
     # No AI call, no email — use this to inspect the prompt before spending tokens.
     if mode == "new-routine" and getattr(args, "print_prompt", False):
         prior_for_suggestions = periods[1:] if len(periods) > 1 else []
-        system_prompt, user_prompt = build_weight_suggestions_prompt(
+        day_prompts = build_weight_suggestions_prompt(
             target_period,
             prior_for_suggestions,
             goal=args.goal,
             axial_load_exercises=axial_load_exercises,
         )
-        output = (
-            f"# SYSTEM PROMPT\n\n{system_prompt}\n\n"
-            f"{'─' * 80}\n\n"
-            f"# USER PROMPT\n\n{user_prompt}"
-        )
+        sections = []
+        for i, (system_prompt, user_prompt) in enumerate(day_prompts, 1):
+            sections.append(
+                f"{'=' * 72}\n"
+                f"===== DAY {i} of {len(day_prompts)} =====\n"
+                f"{'=' * 72}\n\n"
+                f"# SYSTEM PROMPT\n\n{system_prompt}\n\n"
+                f"{'─' * 72}\n\n"
+                f"# USER PROMPT\n\n{user_prompt}"
+            )
+        output = "\n\n".join(sections)
         ANALYSES_DIR.mkdir(exist_ok=True)
         out_path = ANALYSES_DIR / f"prompt_new-routine_{datetime.now().strftime('%Y%m%d')}.txt"
         out_path.write_text(output, encoding="utf-8")
         print(output)
         print(f"\n[new-routine] Prompt saved to: {out_path}")
         return True
+
 
     # For new-routine the prose analysis is skipped — only the structured weight
     # suggestions table is sent. This also saves one Gemini API request.
