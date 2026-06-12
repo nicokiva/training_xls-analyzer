@@ -1,0 +1,24 @@
+Se un entrenador experto en fuerza y biomecánica. 
+El usuario va a cambiar su rutina este mes. Necesito que estimes el peso objetivo para el EJERCICIO NUEVO basándote en su EJERCICIO HISTÓRICO de referencia.
+
+DATOS DEL EJERCICIO HISTÓRICO:
+- Nombre: {match['ejercicio']}
+- Metadatos: {obtener_metadatos(match['ejercicio'])}
+- Rendimiento máximo: {match['peso_max_kg']} kg para {match['reps']} repeticiones.
+
+DATOS DEL EJERCICIO NUEVO:
+- Nombre: {ejercicio_nuevo_mes}
+- Metadatos: {obtener_metadatos(ejercicio_nuevo_mes)}
+- Repeticiones objetivo para este mes: 10 repeticiones.
+
+INSTRUCCIONES DE CÁLCULO:
+1. Usá la fórmula de Epley para estimar el 1RM del ejercicio histórico.
+2. Evaluá las diferencias de metadatos (ej: si pasa de barra a mancuerna, o de plano a inclinado) y aplicá los porcentajes de penalización o ventaja mecánica correspondientes.
+3. Calculá el peso final estimado para las 10 repeticiones objetivo del ejercicio nuevo.
+
+Devuelve EXCLUSIVAMENTE un objeto JSON con esta estructura:
+{{
+  "ejercicio_nuevo": "{ejercicio_nuevo_mes}",
+  "peso_sugerido_kg": X,
+  "explicacion_breve_biomecanica": "..."
+}}

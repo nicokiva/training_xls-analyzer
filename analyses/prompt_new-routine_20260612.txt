@@ -1,0 +1,163 @@
+# SYSTEM PROMPT
+
+Sos un entrenador de Powerbuilding de élite y analista de rendimiento deportivo. Analizás números con frialdad matemática. Hablás con voseo argentino. Seguís las reglas del prompt al pie de la letra. Antes de calcular cualquier peso, rastreás el ejercicio en TODO el historial cronológico provisto para identificar la tendencia real de carga. Si el rango de repeticiones cambió entre períodos, aplicás estimación de 1RM submáxima (fórmula: peso × (1 + reps/30)) para adaptar el peso al nuevo rango. Si hay notas de dolor o molestia en el historial de un ejercicio, penalizás el peso sugerido un 10% e indicás la advertencia en el campo 'progression_analysis'.
+
+────────────────────────────────────────────────────────────────────────────────
+
+# USER PROMPT
+
+Nicolás starts period 15/06/26-.... Goal: hipertrofia.
+
+## Routine to prescribe weights for
+
+Day 1:
+  #1 Abdominal recto largo (combinado) [3x8]
+  #2 Abdominal bolita a dos piernas (combinado) [3x8]
+  #3 Twist ruso (combinado) [3x8]
+  #4 Espinales en colchoneta (combinado) [3x10]
+  #5 Press de pecho con barra (banco plano) (combinado) [3x6]
+  #6 Press de pecho con mancuernas (banco plano) (combinado) [3x8]
+  #7 Press de pecho en Hammer [3x10]
+  #8 Triceps con polea (agarre prono) [3x10]
+  #9 Remo al mentón (combinado) [3x6]
+  #10 Vuelos laterales con mancuernas (combinado) [3x8]
+
+Day 2:
+  #1 Abdominal recto largo (combinado) [3x8]
+  #2 Abdominal bolita a dos piernas (combinado) [3x8]
+  #3 Twist ruso (combinado) [3x8]
+  #4 Espinales en colchoneta (combinado) [3x10]
+  #5 Apertura con mancuerna en banco plano (combinado) [3x6]
+  #6 Press de pecho con mancuernas (banco inclinado) (combinado) [3x8]
+  #7 Peck Deck [3x10]
+  #8 Fondo de tríceps en máquina [3x10]
+  #9 Press militar parado con barra (combinado) [3x6]
+  #10 Press de hombros con barra en landmine (1 brazo) (arrodillado) (combinado) [3x5]
+
+Day 3:
+  #1 Abdominal recto largo (combinado) [3x8]
+  #2 Abdominal bolita a dos piernas (combinado) [3x8]
+  #3 Twist ruso (combinado) [3x8]
+  #4 Espinales en colchoneta (combinado) [3x10]
+  #5 Prensa Hammer 45° (combinado) [3x6]
+  #6 Estocada al frente (total) (combinado) [3x10]
+  #7 Extensión de rodillas en máquina [3x10]
+  #8 Tirón dorsal en polea (agarre prono) (combinado) [3x6]
+  #9 Remo a un brazo (combinado) [3x5]
+  #10 Remo en hammer (agarre neutro) [3x10]
+  #11 Bíceps con barra (agarre supino) [3x10]
+
+Day 4:
+  #1 Abdominal recto largo (combinado) [3x8]
+  #2 Abdominal bolita a dos piernas (combinado) [3x8]
+  #3 Twist ruso (combinado) [3x8]
+  #4 Espinales en colchoneta (combinado) [3x10]
+  #5 Sentadilla clásica (combinado) [3x6]
+  #6 Peso muerto con mancuernas (combinado) [3x8]
+  #7 Flexión de rodillas acostado [3x10]
+  #8 Dominada (combinado) [3x6]
+  #9 Remo en landmine (combinado) [3x8]
+  #10 Bíceps martillo (sentado) [3x10]
+
+
+## Pre-calculated settled weights (use as direct baseline — do NOT derive from history text)
+
+Pesos de cierre por ejercicio (calculados por el script — usar como baseline):
+  D1 Abdominal recto largo [#1/10 del día]: 18/05/26 → 2.5 kg (era combinado) [2 semanas de datos] | referencia más completa: 27/03/26 → 8.0 kg [4 semanas] (era combinado)
+  D1 Abdominal bolita a dos piernas [#2/10 del día]: sin historial exacto → equiv. biomecánico 'Abdominal recto largo (manos atras de la nuca)' (score 6/6, 18/05/26) → baseline ajustado 2.5 kg [2 semanas de datos]
+  D1 Twist ruso [#3/10 del día]: 20/04/26 → 10.0 kg (era combinado) [4 semanas de datos]
+  D1 Espinales en colchoneta [#4/10 del día]: 20/04/26 → 10.0 kg (era combinado) [4 semanas de datos]
+  D1 Press de pecho con barra (banco plano) [#5/10 del día]: sin historial exacto → equiv. biomecánico 'Press de pecho con barra en banco plano' (score 6/6, 20/04/26) → baseline ajustado 55.0 kg [4 semanas de datos]
+  D1 Press de pecho con mancuernas (banco plano) [#6/10 del día]: sin historial exacto → patrón equiv. 'press de pecho con barra en banco plano' (20/04/26) → baseline ajustado 50.0 kg [4 semanas de datos]
+  D1 Press de pecho en Hammer [#7/10 del día]: 27/03/26 → 55.0 kg [4 semanas de datos]
+  D1 Triceps con polea (agarre prono) [#8/10 del día]: 18/05/26 → 35.0 kg [4 semanas de datos]
+  D1 Remo al mentón [#9/10 del día]: 23/02/26 → 28.3 kg (era combinado) [4 semanas de datos]
+  D1 Vuelos laterales con mancuernas [#10/10 del día]: 23/02/26 → 12.0 kg (era combinado) [4 semanas de datos]
+  D2 Abdominal recto largo [#1/10 del día]: 18/05/26 → 2.5 kg (era combinado) [2 semanas de datos] | referencia más completa: 27/03/26 → 8.0 kg [4 semanas] (era combinado)
+  D2 Abdominal bolita a dos piernas [#2/10 del día]: sin historial exacto → equiv. biomecánico 'Abdominal recto largo (manos atras de la nuca)' (score 6/6, 18/05/26) → baseline ajustado 2.5 kg [2 semanas de datos]
+  D2 Twist ruso [#3/10 del día]: 20/04/26 → 10.0 kg (era combinado) [4 semanas de datos]
+  D2 Espinales en colchoneta [#4/10 del día]: 20/04/26 → 10.0 kg (era combinado) [4 semanas de datos]
+  D2 Apertura con mancuerna en banco plano [#5/10 del día]: 20/04/26 → 12.5 kg (era combinado) [4 semanas de datos]
+  D2 Press de pecho con mancuernas (banco inclinado) [#6/10 del día]: sin historial exacto → patrón equiv. 'press de pecho con barra en banco inclinado' (10/11/25) → baseline ajustado 45.0 kg [4 semanas de datos]
+  D2 Peck Deck [#7/10 del día]: 18/05/26 → 77.5 kg [4 semanas de datos]
+  D2 Fondo de tríceps en máquina [#8/10 del día]: sin historial exacto → equiv. biomecánico 'Triceps con polea (agarre prono)' (score 0/6, 18/05/26) → baseline ajustado 35.0 kg [4 semanas de datos]
+  D2 Press militar parado con barra [#9/10 del día]: 20/04/26 → 33.8 kg (era combinado) [4 semanas de datos]
+  D2 Press de hombros con barra en landmine (1 brazo) (arrodillado) [#10/10 del día]: sin historial exacto → patrón equiv. 'press militar parado con barra' (20/04/26) → baseline ajustado 35.0 kg [4 semanas de datos]
+  D3 Abdominal recto largo [#1/11 del día]: 18/05/26 → 2.5 kg (era combinado) [2 semanas de datos] | referencia más completa: 27/03/26 → 8.0 kg [4 semanas] (era combinado)
+  D3 Abdominal bolita a dos piernas [#2/11 del día]: sin historial exacto → equiv. biomecánico 'Abdominal recto largo (manos atras de la nuca)' (score 6/6, 18/05/26) → baseline ajustado 2.5 kg [2 semanas de datos]
+  D3 Twist ruso [#3/11 del día]: 20/04/26 → 10.0 kg (era combinado) [4 semanas de datos]
+  D3 Espinales en colchoneta [#4/11 del día]: 20/04/26 → 10.0 kg (era combinado) [4 semanas de datos]
+  D3 Prensa Hammer 45° [#5/11 del día]: 10/11/25 → 213.3 kg (era combinado) [4 semanas de datos]
+  D3 Estocada al frente (total) [#6/11 del día]: 09/12/25 → 22.0 kg (era combinado) [4 semanas de datos]
+  D3 Extensión de rodillas en máquina [#7/11 del día]: 18/05/26 → 70.0 kg [3 semanas de datos]
+  D3 Tirón dorsal en polea (agarre prono) [#8/11 del día]: sin historial exacto → equiv. biomecánico 'Tirón dorsal en polea agarre neutro' (score 6/6, 23/02/26) → baseline ajustado 30.0 kg [4 semanas de datos]
+  D3 Remo a un brazo [#9/11 del día]: 09/12/25 → 26.0 kg (era combinado) [4 semanas de datos]
+  D3 Remo en hammer (agarre neutro) [#10/11 del día]: sin historial exacto → equiv. biomecánico 'Remo en hammer agarre neutro' (score 6/6, 27/03/26) → baseline ajustado 75.0 kg [4 semanas de datos]
+  D3 Bíceps con barra (agarre supino) [#11/11 del día]: sin historial exacto → equiv. biomecánico 'Vuelos laterales con mancuernas' (score 6/6, 27/03/26) → baseline ajustado 15.0 kg [4 semanas de datos]
+  D4 Abdominal recto largo [#1/10 del día]: 18/05/26 → 2.5 kg (era combinado) [2 semanas de datos] | referencia más completa: 27/03/26 → 8.0 kg [4 semanas] (era combinado)
+  D4 Abdominal bolita a dos piernas [#2/10 del día]: sin historial exacto → equiv. biomecánico 'Abdominal recto largo (manos atras de la nuca)' (score 6/6, 18/05/26) → baseline ajustado 2.5 kg [2 semanas de datos]
+  D4 Twist ruso [#3/10 del día]: 20/04/26 → 10.0 kg (era combinado) [4 semanas de datos]
+  D4 Espinales en colchoneta [#4/10 del día]: 20/04/26 → 10.0 kg (era combinado) [4 semanas de datos]
+  D4 Sentadilla clásica [#5/10 del día]: 23/02/26 → 76.7 kg (era combinado) [4 semanas de datos]
+  D4 Peso muerto con mancuernas [#6/10 del día]: 23/02/26 → 34.0 kg (era combinado) [4 semanas de datos]
+  D4 Flexión de rodillas acostado [#7/10 del día]: 18/05/26 → 66.7 kg [3 semanas de datos]
+  D4 Dominada [#8/10 del día]: 23/02/26 → 5.0 kg (era combinado) [2 semanas de datos]
+  D4 Remo en landmine [#9/10 del día]: 20/04/26 → 40.0 kg (era combinado) [4 semanas de datos]
+  D4 Bíceps martillo (sentado) [#10/10 del día]: sin historial exacto → patrón equiv. 'biceps con polea' (18/05/26) → baseline ajustado 32.5 kg [4 semanas de datos]
+
+## Axial load exercises detected in this routine
+
+Sentadilla clásica
+
+---
+
+## RULES — read before generating any number
+
+**WEIGHTS — LOAD CONTINUITY ALGORITHM**
+For every exercise, follow this decision tree in order:
+
+1. **Exact match in settled weights block** → Use that weight as the W4 ceiling. Back-calculate W1 and W2 linearly (drop ~2.5–5% per week going backwards). W3/W4 should land near or at the settled baseline.
+2. **New free-weight/barbell exercise (no history), but mechanically equivalent exists** → Apply a **20% stabilization penalty** to the equivalent's settled weight for W1. Example: new "Press militar parado" vs. history "Press hombros en Smith" → W1 = Smith baseline × 0.80.
+3. **New machine/isolation exercise (no equivalent)** → Estimate a conservative high-RIR starting load, flag it as a baseline week in `progression_analysis`.
+4. **Combined execution (superserie)** → Accumulated fatigue causes 10–20% less output vs. isolated. If it was combined before and is now isolated, apply the inverse.
+5. **Bodyweight exercises** → weeks = [0, 0, 0, 0].
+
+**TEMPO & TUT ADJUSTMENT**
+- Default: `"Controlado"` for compound/axial movements (Sentadilla, Peso muerto, Remo).
+- Arms and lateral deltoids (Tríceps polea, Bíceps cualquier variante, Vuelos laterales/posteriores): mandatory **`"4-0-1-0"`** (4s eccentric, 0 transition, 1s concentric, 0 pause). **IMPORTANT:** if this exercise has prior history, reduce W1 by 10–15% vs. settled weight to compensate for the massive increase in Time Under Tension.
+- Machine chest/back: `"3-0-1-0"`.
+- Format is always `"E-P-C-P"` or `"Controlado"`.
+
+**SAFETY (axial load)**
+For every exercise listed under "Axial load exercises" above: strict RIR 1-2 in W4. NEVER prescribe RIR 0, Drop Sets, or absolute failure. Tempo must remain `"Controlado"`.
+
+**RIR_W4**
+- Axial/free barbell (Sentadilla, Peso muerto, Press con barra plano/inclinado, Press hombros con barra): `"RIR 1-2"` always.
+- Guided machines (Peck Deck, Extensión rodillas, Flexión rodillas, Hammer): `"RIR 0 (fallo técnico)"`.
+- Isolation pulleys (Tríceps polea, Bíceps polea, Depresores): `"RIR 0 + Drop Set"`.
+- Abdomen: `"RIR 1"`.
+
+**REST (rest_s)**
+- Each `rest_s` must be a plain integer or null. Never a string.
+- Combined/superset group: set `rest_s` ONLY on the LAST exercise of the group. All others must be null.
+- The abdomen group (Abdominal recto largo, Rotaciones de pie con disco, Extensión de cadera en banco) appears at the start of every day as a combined group: rest_s = null on the first two, rest_s = 90 on Extensión de cadera en banco.
+- Abdomen loads must progress via micro-loads (0.5–1 kg/week) or stay flat — never aggressive jumps. This prevents CNS fatigue before the main heavy lifts.
+
+**CHALLENGE**
+- Write one specific, measurable challenge per exercise for the 4-week block.
+- Isolation/machine exercises (Peck Deck, Tríceps polea, Bíceps polea, Extensión rodillas, Depresores, Vuelos laterales): MUST be `"Drop Set en la última serie de W4: bajar 20% del peso inmediatamente tras fallo técnico y empujar al fallo de nuevo."`.
+- Axial/barbell exercises: technique or volume-based only (e.g. "Completar todas las series con RIR 1 limpio", "Alcanzar W4 sin pérdida de técnica").
+- Abdomen combined group: `"Completar el triset sin pausa extra durante todo el bloque"`.
+- If nothing notable: `"Consolidar técnica y ramp progresivo"`.
+
+**PROGRESSION ANALYSIS**
+- Before assigning any weight, scan ALL periods in the history for this exercise.
+- Identify the trend: ascending / stagnant / descending, and cite the data (e.g. "W4 del 03/26: 67.5kg × 6 reps").
+- If rep range changed between periods, apply 1RM estimation: `1RM ≈ weight × (1 + reps/30)`, then derive the new target weight for the new rep range.
+- If the exercise is new, state the equivalent used and the transfer factor applied.
+- If any period has pain/injury notes for this movement, reduce W1 by 10% and flag it explicitly.
+
+**COMPLETENESS**
+- Include EVERY exercise from the routine above — no exceptions, no truncations.
+- Abdomen weights must be identical across all 4 days (same exercises, same load).
+- The "exercise" field must match the routine name character by character.

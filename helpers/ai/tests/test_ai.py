@@ -4,11 +4,13 @@ Tests for helpers/ai/ai.py — pure/prompt-building functions and mock mode.
 import pytest
 from helpers.ai import (
     _format_exercise_history,
+    _format_routine_structure,
     build_global_prompt,
     build_new_routine_prompt,
     build_weekly_prompt,
     analyze,
 )
+from helpers.ai.ai import _group_combined_exercises
 
 
 # ---------------------------------------------------------------------------
@@ -25,9 +27,9 @@ def _make_week(week_num, has_data=True):
     return {"week": week_num, "series": [{"reps": "", "peso": ""} for _ in range(3)]}
 
 
-def _make_exercise(name, weeks_with_data=(1,)):
+def _make_exercise(name, weeks_with_data=(1,), is_comb=False):
     weeks = [_make_week(w, has_data=(w in weeks_with_data)) for w in range(1, 5)]
-    return {"name": name, "weeks": weeks}
+    return {"name": name, "is_comb": is_comb, "weeks": weeks}
 
 
 def _make_period(period_name, exercises, day=1):
@@ -194,3 +196,130 @@ class TestAnalyzeMock:
     def test_mock_contains_mock_label(self):
         result = analyze([], api_key="fake", mock=True, mode="global", goal="test")
         assert "MOCK" in result or "mock" in result.lower()
+
+
+# ---------------------------------------------------------------------------
+# _group_combined_exercises
+# ---------------------------------------------------------------------------
+
+class TestGroupCombinedExercises:
+    def _ex(self, name, is_comb):
+        return {"name": name, "is_comb": is_comb}
+
+    def test_all_isolated_produces_single_item_groups(self):
+        exs = [self._ex("A", False), self._ex("B", False), self._ex("C", False)]
+        groups = _group_combined_exercises(exs)
+        assert len(groups) == 3
+        assert all(not g["comb"] for g in groups)
+        assert all(len(g["exercises"]) == 1 for g in groups)
+
+    def test_all_combined_produces_one_group(self):
+        exs = [self._ex("A", True), self._ex("B", True), self._ex("C", True)]
+        groups = _group_combined_exercises(exs)
+        assert len(groups) == 1
+        assert groups[0]["comb"] is True
+        assert len(groups[0]["exercises"]) == 3
+
+    def test_mixed_sequence_splits_correctly(self):
+        # [comb, comb] [isolated] [comb, comb, comb] [isolated]
+        exs = [
+            self._ex("A", True), self._ex("B", True),
+            self._ex("C", False),
+            self._ex("D", True), self._ex("E", True), self._ex("F", True),
+            self._ex("G", False),
+        ]
+        groups = _group_combined_exercises(exs)
+        assert len(groups) == 4
+        assert groups[0] == {"comb": True,  "exercises": [exs[0], exs[1]]}
+        assert groups[1] == {"comb": False, "exercises": [exs[2]]}
+        assert groups[2] == {"comb": True,  "exercises": [exs[3], exs[4], exs[5]]}
+        assert groups[3] == {"comb": False, "exercises": [exs[6]]}
+
+    def test_empty_list_returns_empty(self):
+        assert _group_combined_exercises([]) == []
+
+    def test_single_combined_exercise_is_its_own_group(self):
+        exs = [self._ex("X", True)]
+        groups = _group_combined_exercises(exs)
+        assert len(groups) == 1
+        assert groups[0]["comb"] is True
+
+
+# ---------------------------------------------------------------------------
+# _format_routine_structure — superset rendering
+# ---------------------------------------------------------------------------
+
+class TestFormatRoutineStructure:
+    def _make_comb_period(self):
+        """Day with: [A,B,C comb] + [D isolated] + [E,F comb]."""
+        return {
+            "period": "01/01/26-31/01/26",
+            "days": [{
+                "day": 1,
+                "exercises": [
+                    _make_exercise("Ejercicio A", is_comb=True),
+                    _make_exercise("Ejercicio B", is_comb=True),
+                    _make_exercise("Ejercicio C", is_comb=True),
+                    _make_exercise("Ejercicio D", is_comb=False),
+                    _make_exercise("Ejercicio E", is_comb=True),
+                    _make_exercise("Ejercicio F", is_comb=True),
+                ]
+            }]
+        }
+
+    def test_superset_header_contains_all_exercise_names(self):
+        result = _format_routine_structure(self._make_comb_period())
+        assert "Ejercicio A + Ejercicio B + Ejercicio C" in result
+
+    def test_rest_here_marker_on_last_of_group(self):
+        result = _format_routine_structure(self._make_comb_period())
+        lines = result.split("\n")
+        # Exercise lines start with "#N" — the header line says "Superset:"
+        c_line = next(l for l in lines if "Ejercicio C" in l and "#" in l)
+        assert "← REST HERE" in c_line
+        # Ejercicio A and B must NOT have the marker
+        a_line = next(l for l in lines if "Ejercicio A" in l and "#" in l)
+        b_line = next(l for l in lines if "Ejercicio B" in l and "#" in l)
+        assert "← REST HERE" not in a_line
+        assert "← REST HERE" not in b_line
+
+    def test_isolated_exercise_has_no_rest_marker(self):
+        result = _format_routine_structure(self._make_comb_period())
+        lines = result.split("\n")
+        d_line = next(l for l in lines if "Ejercicio D" in l)
+        assert "← REST HERE" not in d_line
+        assert "Superset" not in d_line
+
+    def test_position_numbers_are_continuous(self):
+        result = _format_routine_structure(self._make_comb_period())
+        for i in range(1, 7):
+            assert f"#{i} " in result
+
+    def test_two_independent_superset_blocks(self):
+        result = _format_routine_structure(self._make_comb_period())
+        # Both superset headers should appear
+        assert "Superset: Ejercicio A" in result
+        assert "Superset: Ejercicio E + Ejercicio F" in result
+
+    def test_superset_indented_deeper_than_header(self):
+        result = _format_routine_structure(self._make_comb_period())
+        lines = result.split("\n")
+        header_line = next(l for l in lines if "Superset: Ejercicio A" in l)
+        ex_line     = next(l for l in lines if "#1 Ejercicio A" in l)
+        # Exercise line should start with more spaces than header line
+        header_indent = len(header_line) - len(header_line.lstrip())
+        ex_indent     = len(ex_line)     - len(ex_line.lstrip())
+        assert ex_indent > header_indent
+
+    def test_day_with_no_combined_exercises(self):
+        period = {
+            "period": "01/01/26-31/01/26",
+            "days": [{"day": 1, "exercises": [
+                _make_exercise("Solo A"), _make_exercise("Solo B"),
+            ]}]
+        }
+        result = _format_routine_structure(period)
+        assert "Superset" not in result
+        assert "#1 Solo A" in result
+        assert "#2 Solo B" in result
+

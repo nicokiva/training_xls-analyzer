@@ -807,31 +807,98 @@ def _format_exercise_history(periods):
     return "\n".join(lines)
 
 
+def _group_combined_exercises(exercises):
+    """
+    Partition a list of exercises into a sequence of groups.
+
+    A group is either:
+      - A single exercise with is_comb=False  →  {"comb": False, "exercises": [ex]}
+      - A contiguous run of exercises with is_comb=True  →  {"comb": True, "exercises": [ex, ...]}
+
+    This information is used by _format_routine_structure() to render superset
+    boundaries so the AI knows exactly which exercises form each combined group
+    and which one is last (where rest_s must be placed).
+
+    Args:
+        exercises: List of exercise dicts (each with at least "is_comb" key).
+
+    Returns:
+        List of group dicts with keys "comb" (bool) and "exercises" (list).
+    """
+    groups = []
+    for ex in exercises:
+        is_c = ex.get("is_comb", False)
+        if is_c and groups and groups[-1]["comb"]:
+            # Extend the current combined group
+            groups[-1]["exercises"].append(ex)
+        else:
+            groups.append({"comb": is_c, "exercises": [ex]})
+    return groups
+
+
 def _format_routine_structure(period):
     """
     Formats the exercise structure of a period without execution data.
     Useful for new-routine where the tab doesn't have reps/weights loaded yet.
     Includes target sets × reps from the PDF-parsed data (week 1, rep column).
-    Combined exercises are marked with (combinado).
-    Position within the day is shown (#1, #2, …) so the AI can account for
-    accumulated fatigue when suggesting weights.
+
+    Combined groups are rendered as explicit blocks with a header line that
+    lists all exercises in the group and a ← REST HERE marker on the last one.
+    This lets the AI know exactly where each superset ends (critical for
+    assigning rest_s correctly) and avoids treating an entire day as one
+    combined sequence.
+
+    Example output for a day with groups [A,B,C,D] / [E,F] / G / H / [I,J]:
+
+        Day 1:
+          --- Superset: Abdominal recto largo + Abdominal bolita a dos piernas + Twist ruso + Espinales en colchoneta ---
+            #1 Abdominal recto largo [3x8]
+            #2 Abdominal bolita a dos piernas [3x8]
+            #3 Twist ruso [3x8]
+            #4 Espinales en colchoneta [3x10]  ← REST HERE
+          --- Superset: Press de pecho con barra + Press de pecho con mancuernas ---
+            #5 Press de pecho con barra [3x6]
+            #6 Press de pecho con mancuernas [3x8]  ← REST HERE
+          #7 Press de pecho en Hammer [3x10]
+          #8 Tríceps con polea [3x10]
+          --- Superset: Remo al mentón + Vuelos laterales ---
+            #9 Remo al mentón [3x6]
+            #10 Vuelos laterales [3x8]  ← REST HERE
     """
+    def _reps_suffix(ex):
+        if not ex.get("weeks"):
+            return ""
+        w1 = ex["weeks"][0]["series"]
+        rep_vals = [s["reps"] for s in w1 if s.get("reps")]
+        if not rep_vals:
+            return ""
+        unique = list(dict.fromkeys(rep_vals))
+        return f" [{len(w1)}x{'/'.join(unique)}]"
+
     lines = []
     for day in period["days"]:
         lines.append(f"Day {day['day']}:")
-        for pos, ex in enumerate(day["exercises"], start=1):
-            label = ex['name'] + (" (combinado)" if ex.get("is_comb") else "")
-            # Extract target reps from week 1 (coach-prescribed, same every week)
-            target_reps = None
-            if ex.get("weeks"):
-                w1_series = ex["weeks"][0]["series"]
-                rep_values = [s["reps"] for s in w1_series if s.get("reps")]
-                if rep_values:
-                    n_sets = len(w1_series)
-                    unique_reps = list(dict.fromkeys(rep_values))
-                    target_reps = f"{n_sets}x{'/'.join(unique_reps)}"
-            suffix = f" [{target_reps}]" if target_reps else ""
-            lines.append(f"  #{pos} {label}{suffix}")
+        groups = _group_combined_exercises(day["exercises"])
+        pos = 1  # global exercise counter within the day
+
+        for group in groups:
+            if group["comb"]:
+                # Render a superset block
+                names = " + ".join(ex["name"] for ex in group["exercises"])
+                lines.append(f"  --- Superset: {names} ---")
+                for i, ex in enumerate(group["exercises"]):
+                    suffix = _reps_suffix(ex)
+                    is_last = (i == len(group["exercises"]) - 1)
+                    rest_marker = "  ← REST HERE" if is_last else ""
+                    lines.append(f"    #{pos} {ex['name']}{suffix}{rest_marker}")
+                    pos += 1
+            else:
+                # Single isolated exercise
+                ex = group["exercises"][0]
+                suffix = _reps_suffix(ex)
+                lines.append(f"  #{pos} {ex['name']}{suffix}")
+                pos += 1
+
         lines.append("")
     return "\n".join(lines)
 
