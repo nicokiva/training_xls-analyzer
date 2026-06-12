@@ -722,13 +722,15 @@ def _render_global_settled_weights_indexed(
 
     Each unique exercise appears exactly ONCE regardless of how many days it
     appears in — repeats (e.g. abdomen) share a single weight entry.
+
+    NOTE: used by build_new_routine_prompt (Groq path). The weight-suggestions
+    prompt uses _format_exercise_history_indexed instead.
     """
     from helpers.catalog.matcher import load_shared_catalog
 
     lookup, flat_best = _build_history_lookup(prior_periods)
     shared_catalog    = load_shared_catalog()
 
-    # Collect first occurrence of each unique exercise (preserves is_comb context)
     first_occurrence: dict = {}
     for day_data in new_period["days"]:
         for ex in day_data["exercises"]:
@@ -743,6 +745,146 @@ def _render_global_settled_weights_indexed(
         weight_line = _resolve_exercise_weight(ex, new_is_c, lookup, flat_best, shared_catalog)
         lines.append(f"  #{pos}: {weight_line}")
     return "\n".join(lines)
+
+
+def _format_exercise_history_indexed(
+    new_period: dict,
+    prior_periods: list,
+    index: dict,
+) -> str:
+    """
+    Builds a per-exercise chronological history block using global #N keys.
+
+    For each unique exercise in the new period the AI receives the full timeline
+    of settled weights across prior periods (oldest → newest) so it can identify
+    the progression trend and project W1–W4 itself.
+
+    Cases:
+    - Direct history found  → timeline of settled weights, oldest first.
+    - No direct, partial match → same timeline, noting the matched name.
+    - No direct, catalog match → equivalent exercise timeline + transfer factor.
+    - No direct, archetype match → equivalent timeline + transfer factor.
+    - No history at all → flagged as new exercise.
+
+    (C) suffix on a period entry means the exercise was executed as a superset
+    in that period. [Nw] suffix means fewer than 4 weeks of data (less reliable).
+    """
+    import re
+    from helpers.catalog.matcher import find_closest_exercise, load_shared_catalog
+
+    def strip_parens(s):
+        return re.sub(r"\s*\(.*?\)", "", s).strip()
+
+    lookup, flat_best = _build_history_lookup(prior_periods)
+    shared_catalog    = load_shared_catalog()
+
+    # First occurrence per unique exercise name (preserves is_comb context)
+    first_occurrence: dict = {}
+    for day_data in new_period["days"]:
+        for ex in day_data["exercises"]:
+            if ex["name"] not in first_occurrence:
+                first_occurrence[ex["name"]] = ex
+
+    def _timeline(entries: list) -> str:
+        """
+        Formats history entries as 'DD/MM/YY → X.X kg' tokens oldest first.
+        Deduplicates by period label — when the same exercise appears in
+        multiple days within the same period, keeps the richest entry (most
+        weeks of data; ties broken by highest settled weight).
+        (C) = combined; [Nw] = fewer than 4 weeks (less reliable).
+        """
+        from datetime import datetime
+
+        best: dict = {}
+        for p_label, settled, n_weeks, is_c in entries:
+            prev = best.get(p_label)
+            if prev is None or n_weeks > prev[2] or (n_weeks == prev[2] and settled > prev[1]):
+                best[p_label] = (p_label, settled, n_weeks, is_c)
+
+        def _sort_key(entry):
+            try:
+                return datetime.strptime(entry[0], "%d/%m/%y")
+            except ValueError:
+                return datetime.min
+
+        chronological = sorted(best.values(), key=_sort_key)
+        parts = []
+        for p_label, settled, n_weeks, is_c in chronological:
+            note        = " (C)" if is_c else ""
+            reliability = f" [{n_weeks}w]" if n_weeks < 4 else ""
+            parts.append(f"{p_label} → {settled:.1f} kg{note}{reliability}")
+        return "  |  ".join(parts)
+
+    lines = ["Exercise history (oldest → newest):"]
+    for pos in sorted(index):
+        name     = index[pos]
+        ex       = first_occurrence[name]
+        new_is_c = ex.get("is_comb", False)
+        raw_key   = _normalize_ex_name(strip_parens(name))
+        canon_key = _canonical_key(name)
+
+        # 1. Exact canonical/alias match (same is_comb context)
+        entries = lookup.get((canon_key, new_is_c)) or lookup.get((raw_key, new_is_c))
+        iso_fallback = False
+        if not entries and new_is_c:
+            entries = lookup.get((canon_key, False)) or lookup.get((raw_key, False))
+            if entries:
+                iso_fallback = True
+
+        if entries:
+            tl = _timeline(entries)
+            note = "  ← was isolated, now combined" if iso_fallback else ""
+            lines.append(f"  #{pos}: {tl}{note}")
+            continue
+
+        # 2. Partial name prefix match
+        key = canon_key
+        for (hist_key, hist_is_c), hist_entries in lookup.items():
+            if hist_is_c == new_is_c and (key.startswith(hist_key) or hist_key.startswith(key)):
+                lines.append(f"  #{pos}: {_timeline(hist_entries)}  ← matched as '{hist_key}'")
+                entries = hist_entries
+                break
+        if entries:
+            continue
+
+        # 3. Catalog biomechanical match
+        flat_history = [v for v in flat_best.values() if v["is_comb"] == new_is_c]
+        cat_match, cat_score = find_closest_exercise(name, flat_history, shared_catalog)
+        if cat_match is not None and cat_score >= 0:
+            factor    = _transfer_factor(cat_match["name"], name)
+            match_raw   = _normalize_ex_name(strip_parens(cat_match["name"]))
+            match_canon = _canonical_key(cat_match["name"])
+            match_entries = (
+                lookup.get((match_canon, new_is_c)) or lookup.get((match_raw, new_is_c)) or
+                lookup.get((match_canon, False))     or lookup.get((match_raw, False))
+            )
+            if match_entries:
+                tl = _timeline(match_entries)
+                lines.append(
+                    f"  #{pos}: no direct history → equiv. '{cat_match['name']}' "
+                    f"(score {cat_score}/6, transfer ×{factor:.0%}): {tl}"
+                )
+                continue
+
+        # 4. Regex archetype match
+        archetype = _get_archetype(name)
+        arch_found = False
+        if archetype:
+            for (hist_key, hist_is_c), hist_entries in lookup.items():
+                if hist_is_c == new_is_c and _get_archetype(hist_key) == archetype:
+                    factor = _transfer_factor(hist_key, name)
+                    lines.append(
+                        f"  #{pos}: no direct history → archetype equiv. '{hist_key}' "
+                        f"(transfer ×{factor:.0%}): {_timeline(hist_entries)}"
+                    )
+                    arch_found = True
+                    break
+
+        if not arch_found:
+            lines.append(f"  #{pos}: no history — new exercise, set conservative baseline")
+
+    return "\n".join(lines)
+
 
 def get_settled_weights_dict(new_period: dict, prior_periods: list) -> dict:
     """
@@ -1350,18 +1492,18 @@ def build_weight_suggestions_prompt(
     template_path = TEMPLATES_DIR / "weight-suggestions.txt"
     template = template_path.read_text(encoding="utf-8") if template_path.exists() else ""
 
-    index         = _build_global_index(new_period)
-    index_block   = _render_global_index_block(index)
+    index           = _build_global_index(new_period)
+    index_block     = _render_global_index_block(index)
     structure_block = _render_period_structure_indexed(new_period, index)
-    routine_block = f"{index_block}\n\n{structure_block}"
+    routine_block   = f"{index_block}\n\n{structure_block}"
 
-    settled_block = _render_global_settled_weights_indexed(new_period, prior_periods, index)
+    history_block = _format_exercise_history_indexed(new_period, prior_periods, index)
     axial_str     = ", ".join(axial_load_exercises) if axial_load_exercises else "ninguno detectado"
     period_label  = new_period.get("period", "")
 
     user_prompt = template.format(
         routine=routine_block,
-        settled_weights_block=settled_block,
+        exercise_history=history_block,
         axial_load_exercises=axial_str,
         period=period_label,
         goal=goal,

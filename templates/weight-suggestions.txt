@@ -4,9 +4,13 @@ Nicolás starts period {period}. Goal: {goal}.
 
 {routine}
 
-## Pre-calculated settled weights (use as direct baseline — do NOT derive from history text)
+## Exercise history (oldest → newest)
 
-{settled_weights_block}
+Use this to derive weights. Each line is one unique exercise: settled weight per prior period in chronological order.
+(C) = was executed as a superset in that period. [Nw] = fewer than 4 weeks of data (less reliable).
+"equiv." entries show the closest biomechanical match when no direct history exists, with the transfer factor to apply.
+
+{exercise_history}
 
 ## Axial load exercises detected in this routine
 
@@ -16,18 +20,27 @@ Nicolás starts period {period}. Goal: {goal}.
 
 ## RULES — read before generating any number
 
-**WEIGHTS — LOAD CONTINUITY ALGORITHM**
-For every exercise, follow this decision tree in order:
+**WEIGHTS — PROGRESSION ALGORITHM**
+For every exercise, derive W1–W4 from the history block above:
 
-1. **Exact match in settled weights block** → Use that weight as the W4 ceiling. Back-calculate W1 and W2 linearly (drop ~2.5–5% per week going backwards). W3/W4 should land near or at the settled baseline.
-2. **New free-weight/barbell exercise (no history), but mechanically equivalent exists** → Apply a **20% stabilization penalty** to the equivalent's settled weight for W1. Example: new "Press militar parado" vs. history "Press hombros en Smith" → W1 = Smith baseline × 0.80.
-3. **New machine/isolation exercise (no equivalent)** → Estimate a conservative high-RIR starting load, flag it as a baseline week in `progression_analysis`.
-4. **Combined execution (superserie)** → Accumulated fatigue causes 10–20% less output vs. isolated. If it was combined before and is now isolated, apply the inverse.
-5. **Bodyweight exercises** → weeks = [0, 0, 0, 0].
+1. **Ascending trend** (weight increased across periods) → continue the rate of progression.
+   Project W4 = last settled weight + average increment per period.
+   Ramp: W1 ≈ W4 − 7.5%, W2 ≈ W4 − 5%, W3 ≈ W4 − 2.5%, W4 = projected target.
+2. **Stagnant trend** (2+ periods at same weight) → attempt a modest 2.5–5% increase for W4.
+   Use the same ramp.
+3. **Descending trend** → stabilize at the most recent settled weight. Do not add load.
+4. **Rep range changed vs. history** → convert using 1RM estimation: `1RM ≈ weight × (1 + reps/30)`,
+   then derive the target weight for the new rep range before applying the trend logic.
+5. **Equivalent exercise** (no direct history) → apply the transfer factor shown, then use the
+   equivalent's trend as the starting reference.
+6. **No history, no equivalent** → estimate a conservative W1 (high RIR), flag as baseline week.
+7. **Combined execution (superserie)** → if history shows the exercise was already combined,
+   use that weight directly. If now combined but was isolated before, reduce W1 by 10–20%.
+8. **Bodyweight exercises** → weeks = [0, 0, 0, 0].
 
 **TEMPO & TUT ADJUSTMENT**
 - Default: `"Controlado"` for compound/axial movements (Sentadilla, Peso muerto, Remo).
-- Arms and lateral deltoids (Tríceps polea, Bíceps cualquier variante, Vuelos laterales/posteriores): mandatory **`"4-0-1-0"`** (4s eccentric, 0 transition, 1s concentric, 0 pause). **IMPORTANT:** if this exercise has prior history, reduce W1 by 10–15% vs. settled weight to compensate for the massive increase in Time Under Tension.
+- Arms and lateral deltoids (Tríceps polea, Bíceps cualquier variante, Vuelos laterales/posteriores): mandatory **`"4-0-1-0"`** (4s eccentric, 0 transition, 1s concentric, 0 pause). **IMPORTANT:** if this exercise has prior history, reduce W1 by 10–15% vs. the projected W4 to compensate for the massive increase in Time Under Tension.
 - Machine chest/back: `"3-0-1-0"`.
 - Format is always `"E-P-C-P"` or `"Controlado"`.
 
@@ -54,11 +67,11 @@ For every exercise listed under "Axial load exercises" above: strict RIR 1-2 in 
 - If nothing notable: `"Consolidar técnica y ramp progresivo"`.
 
 **PROGRESSION ANALYSIS**
-- Before assigning any weight, scan ALL periods in the history for this exercise.
-- Identify the trend: ascending / stagnant / descending, and cite the data (e.g. "W4 del 03/26: 67.5kg × 6 reps").
-- If rep range changed between periods, apply 1RM estimation: `1RM ≈ weight × (1 + reps/30)`, then derive the new target weight for the new rep range.
-- If the exercise is new, state the equivalent used and the transfer factor applied.
-- If any period has pain/injury notes for this movement, reduce W1 by 10% and flag it explicitly.
+- For every exercise, read its full history, identify the trend (ascending / stagnant / descending), and cite the data explicitly (e.g. "02/26: 50kg → 03/26: 52.5kg → 04/26: 55kg, ascending +2.5kg/period").
+- Show your W4 projection and how you arrived at it.
+- If rep range changed, show the 1RM conversion step.
+- If using an equivalent exercise, state the transfer factor applied.
+- If pain/injury notes exist for this movement, reduce W1 by 10% and flag it explicitly.
 
 **COMPLETENESS**
 - Include EVERY exercise from the routine above — no exceptions, no truncations.
