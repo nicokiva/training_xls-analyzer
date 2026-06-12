@@ -813,11 +813,21 @@ def _group_combined_exercises(exercises):
 
     A group is either:
       - A single exercise with is_comb=False  →  {"comb": False, "exercises": [ex]}
-      - A contiguous run of exercises with is_comb=True  →  {"comb": True, "exercises": [ex, ...]}
+      - A set of exercises with is_comb=True that share the same combined group
+                                              →  {"comb": True,  "exercises": [ex, ...]}
 
-    This information is used by _format_routine_structure() to render superset
-    boundaries so the AI knows exactly which exercises form each combined group
-    and which one is last (where rest_s must be placed).
+    Two strategies depending on available data:
+
+    1. **comb_group IDs present** (from Z-column merges read by the reader):
+       Exercises with the same ``comb_group`` value form one group, regardless of
+       whether they are contiguous with other combined exercises. This correctly
+       handles back-to-back groups (e.g., abdomen triset #1-#4 followed immediately
+       by a chest superset #5-#6 — both have is_comb=True with no gap between them).
+
+    2. **Fallback — no comb_group IDs** (old tabs or tabs without merge data):
+       Groups consecutive is_comb=True exercises. This may merge adjacent groups
+       into one when they are contiguous, but it is the best approximation without
+       explicit group boundaries.
 
     Args:
         exercises: List of exercise dicts (each with at least "is_comb" key).
@@ -825,11 +835,31 @@ def _group_combined_exercises(exercises):
     Returns:
         List of group dicts with keys "comb" (bool) and "exercises" (list).
     """
+    # Use comb_group IDs when any combined exercise has them.
+    has_group_ids = any(
+        "comb_group" in ex
+        for ex in exercises
+        if ex.get("is_comb")
+    )
+
+    if has_group_ids:
+        groups = []
+        for ex in exercises:
+            is_c = ex.get("is_comb", False)
+            gid  = ex.get("comb_group")
+            # Extend an existing combined group only when the group ID matches.
+            if is_c and gid is not None and groups and groups[-1]["comb"] and groups[-1]["_gid"] == gid:
+                groups[-1]["exercises"].append(ex)
+            else:
+                groups.append({"comb": is_c, "exercises": [ex], "_gid": gid})
+        # Strip the internal _gid key before returning.
+        return [{"comb": g["comb"], "exercises": g["exercises"]} for g in groups]
+
+    # Fallback: contiguous is_comb=True runs.
     groups = []
     for ex in exercises:
         is_c = ex.get("is_comb", False)
         if is_c and groups and groups[-1]["comb"]:
-            # Extend the current combined group
             groups[-1]["exercises"].append(ex)
         else:
             groups.append({"comb": is_c, "exercises": [ex]})

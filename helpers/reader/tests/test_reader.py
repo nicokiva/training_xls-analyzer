@@ -2,7 +2,7 @@
 Tests for helpers/reader/reader.py — pure functions only (no I/O).
 """
 import pytest
-from helpers.reader import parse_tab, get_latest_week_indices, extract_week_data
+from helpers.reader import parse_tab, get_latest_week_indices, extract_week_data, _build_comb_group_map
 
 
 # ---------------------------------------------------------------------------
@@ -312,3 +312,105 @@ class TestDropSetParsing:
         days = parse_tab(rows)
         s = days[0]["exercises"][0]["weeks"][0]["series"][0]
         assert float(s["peso"]) == 10.0
+
+
+# ---------------------------------------------------------------------------
+# _build_comb_group_map
+# ---------------------------------------------------------------------------
+
+def _merge(start_row, end_row, col=25):
+    """Helper to build a GridRange dict for a Z-column merge."""
+    return {
+        "startRowIndex":    start_row,
+        "endRowIndex":      end_row,
+        "startColumnIndex": col,
+        "endColumnIndex":   col + 1,
+    }
+
+
+class TestBuildCombGroupMap:
+    def test_empty_merges_returns_empty_map(self):
+        assert _build_comb_group_map([]) == {}
+
+    def test_single_multi_row_merge_maps_all_rows(self):
+        merges = [_merge(5, 8)]   # rows 5, 6, 7 → group 0
+        result = _build_comb_group_map(merges)
+        assert result == {5: 0, 6: 0, 7: 0}
+
+    def test_two_separate_merges_get_different_ids(self):
+        merges = [_merge(3, 5), _merge(7, 9)]   # groups 0 and 1
+        result = _build_comb_group_map(merges)
+        assert result[3] == 0
+        assert result[4] == 0
+        assert result[7] == 1
+        assert result[8] == 1
+
+    def test_single_row_merge_is_ignored(self):
+        """A one-row 'merge' is just cell formatting, not a combined group."""
+        merges = [_merge(5, 6)]  # endRow - startRow = 1 → ignored
+        assert _build_comb_group_map(merges) == {}
+
+    def test_wrong_column_is_ignored(self):
+        """Merges outside the Z-column (col 25) are irrelevant."""
+        merges = [_merge(3, 6, col=0)]   # column A, not Z
+        assert _build_comb_group_map(merges) == {}
+
+    def test_group_ids_are_assigned_top_to_bottom(self):
+        """Lower rows get lower group IDs regardless of dict/list order."""
+        merges = [_merge(10, 12), _merge(2, 4)]   # note: unordered
+        result = _build_comb_group_map(merges)
+        # Row 2 (lower) should have id 0; row 10 (higher) should have id 1
+        assert result[2] == 0
+        assert result[10] == 1
+
+    def test_mixed_valid_and_invalid_merges(self):
+        merges = [
+            _merge(1, 3),         # valid multi-row Z-column merge → group 0
+            _merge(4, 5),         # single-row → ignored
+            _merge(6, 9, col=0),  # wrong column → ignored
+            _merge(10, 13),       # valid → group 1
+        ]
+        result = _build_comb_group_map(merges)
+        assert result == {1: 0, 2: 0, 10: 1, 11: 1, 12: 1}
+
+
+# ---------------------------------------------------------------------------
+# parse_tab — comb_group propagation
+# ---------------------------------------------------------------------------
+
+class TestParseTabCombGroup:
+    def _make_comb_rows(self):
+        """Two exercises both marked [C], at row indices 3 and 4."""
+        ex1 = ["[C] Abdominal recto largo"] + ["10", "5"] * 12
+        ex2 = ["[C] Twist ruso"]             + ["10", "5"] * 12
+        ex3 = ["Press plano"]                + ["10", "60"] * 12
+        return [
+            ["Dia 1"],
+            ["", "1"], ["", "Rep.", "Peso"],
+            ex1,  # row index 3
+            ex2,  # row index 4
+            ex3,  # row index 5
+        ]
+
+    def test_comb_group_assigned_when_map_provided(self):
+        rows = self._make_comb_rows()
+        # Both combined exercises (rows 3 and 4) belong to group 0
+        comb_map = {3: 0, 4: 0}
+        days = parse_tab(rows, comb_group_map=comb_map)
+        exs = days[0]["exercises"]
+        assert exs[0]["comb_group"] == 0
+        assert exs[1]["comb_group"] == 0
+
+    def test_isolated_exercise_has_no_comb_group(self):
+        rows = self._make_comb_rows()
+        comb_map = {3: 0, 4: 0}
+        days = parse_tab(rows, comb_group_map=comb_map)
+        exs = days[0]["exercises"]
+        # Row 5 (Press plano) is not in the map
+        assert "comb_group" not in exs[2]
+
+    def test_no_comb_group_map_produces_no_comb_group_field(self):
+        rows = self._make_comb_rows()
+        days = parse_tab(rows)   # no comb_group_map
+        for ex in days[0]["exercises"]:
+            assert "comb_group" not in ex

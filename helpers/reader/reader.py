@@ -163,24 +163,36 @@ def read_tab_italic_cells(service, spreadsheet_id, tab_name):
 
 def read_tab_metadata(service, spreadsheet_id, tab_name):
     """
-    Fetches notes, italic formatting, and yellow-background cells for a tab
-    in a single API call.
+    Fetches notes, italic formatting, yellow-background cells, and Z-column
+    merge data for a tab in a single API call.
 
     Combined exercises are marked in two ways:
       1. Exercise name starts with "[C] " (new convention).
       2. Exercise name cell (col 0) has a yellow background — rgb ≈ (1, 0.95, 0.8)
          (older convention used before the [C] prefix was introduced).
 
+    Z-column merges encode comb_group boundaries: the sheet writer (pdf2xls-generator
+    sheets.py) merges the Z-column cells for every exercise in the same combined group
+    into a single merged range. Reading these ranges lets us reconstruct which exercises
+    belong together — even when two adjacent groups are back-to-back with no gap.
+
     Returns:
-        Tuple (notes, italic_cells, yellow_rows) where:
-          notes:        Dict mapping (row_idx, col_idx) → note text (str).
-          italic_cells: Set of (row_idx, col_idx) for italic-formatted cells.
-          yellow_rows:  Set of row_idx where col 0 has a yellow background.
+        Tuple (notes, italic_cells, yellow_rows, comb_group_map) where:
+          notes:          Dict mapping (row_idx, col_idx) → note text (str).
+          italic_cells:   Set of (row_idx, col_idx) for italic-formatted cells.
+          yellow_rows:    Set of row_idx where col 0 has a yellow background.
+          comb_group_map: Dict mapping row_idx → comb_group_id (int) for rows
+                          that are part of a multi-row Z-column merge.
+                          Empty dict for tabs generated before merge data existed.
     """
     result = service.spreadsheets().get(
         spreadsheetId=spreadsheet_id,
         ranges=[f"'{tab_name}'"],
-        fields="sheets.data.rowData.values(note,userEnteredFormat.textFormat.italic,userEnteredFormat.backgroundColor)",
+        fields=(
+            "sheets.data.rowData.values"
+            "(note,userEnteredFormat.textFormat.italic,userEnteredFormat.backgroundColor),"
+            "sheets.merges"
+        ),
     ).execute()
 
     notes  = {}
@@ -188,10 +200,10 @@ def read_tab_metadata(service, spreadsheet_id, tab_name):
     yellow_rows: set = set()
     sheets = result.get("sheets", [])
     if not sheets:
-        return notes, italic, yellow_rows
+        return notes, italic, yellow_rows, {}
     data = sheets[0].get("data", [])
     if not data:
-        return notes, italic, yellow_rows
+        return notes, italic, yellow_rows, {}
     for row_idx, row in enumerate(data[0].get("rowData", [])):
         for col_idx, cell in enumerate(row.get("values", [])):
             note = cell.get("note", "").strip()
@@ -209,7 +221,49 @@ def read_tab_metadata(service, spreadsheet_id, tab_name):
                 b = bg.get("blue",  1.0)
                 if r >= 0.95 and g >= 0.88 and b <= 0.85:
                     yellow_rows.add(row_idx)
-    return notes, italic, yellow_rows
+
+    comb_group_map = _build_comb_group_map(sheets[0].get("merges", []))
+    return notes, italic, yellow_rows, comb_group_map
+
+
+# Z-column (Pausa) index — matches PAUSA_COL in pdf2xls-generator/helpers/sheets/sheets.py.
+_PAUSA_COL = 25
+
+
+def _build_comb_group_map(merges: list) -> dict:
+    """
+    Build a row_index → comb_group_id map from Sheets API merge data.
+
+    The sheet writer merges all Z-column cells belonging to the same combined
+    group into a single GridRange. A merge spanning N > 1 rows means those N
+    exercise rows form one combined group. Single-row "merges" are just isolated
+    exercises with Z-cell formatting — they are ignored.
+
+    Group IDs are sequential integers assigned in top-to-bottom order
+    (the topmost group gets id=0, the next gets id=1, …).
+
+    Args:
+        merges: List of GridRange dicts from sheets[0]["merges"] (Sheets API).
+
+    Returns:
+        Dict {row_idx: group_id} for every row inside a multi-row Z-column merge.
+        Empty dict when no Z-column multi-row merges exist (old tabs, or tabs
+        generated without the comb_group writer).
+    """
+    group_map: dict = {}
+    # Keep only multi-row merges in the Z-column (startCol=25, endCol=26).
+    z_merges = [
+        m for m in merges
+        if m.get("startColumnIndex") == _PAUSA_COL
+        and m.get("endColumnIndex") == _PAUSA_COL + 1
+        and (m.get("endRowIndex", 0) - m.get("startRowIndex", 0)) > 1
+    ]
+    # Sort top-to-bottom so IDs are assigned in document order.
+    z_merges.sort(key=lambda m: m["startRowIndex"])
+    for group_id, merge in enumerate(z_merges):
+        for row in range(merge["startRowIndex"], merge["endRowIndex"]):
+            group_map[row] = group_id
+    return group_map
 
 
 def _parse_drop_set_start(raw: str) -> str:
@@ -230,7 +284,7 @@ def _parse_drop_set_start(raw: str) -> str:
     return raw
 
 
-def parse_tab(rows, notes=None, italic_cells=None, yellow_rows=None):
+def parse_tab(rows, notes=None, italic_cells=None, yellow_rows=None, comb_group_map=None):
     """
     Parses the raw rows from a tab and returns a structured list of days.
 
@@ -239,42 +293,31 @@ def parse_tab(rows, notes=None, italic_cells=None, yellow_rows=None):
     For each exercise extracts the reps and weights for 4 weeks × 3 sets.
 
     Args:
-        rows:  List of raw rows (output of read_tab).
-        notes: Optional dict {(row_idx, col_idx): note_text} from read_tab_notes().
-               Notes on column A of an exercise row are attached to that exercise.
+        rows:           List of raw rows (output of read_tab).
+        notes:          Optional dict {(row_idx, col_idx): note_text}.
+                        Notes on column A are attached to the exercise as "note".
+        italic_cells:   Optional set of (row_idx, col_idx). Italic peso cells are
+                        treated as empty (AI suggestions, not real training data).
+        yellow_rows:    Optional set of row_idx for combined exercises detected by
+                        yellow background (older sheet convention).
+        comb_group_map: Optional dict {row_idx: group_id} from _build_comb_group_map().
+                        When provided, assigns "comb_group" to each combined exercise
+                        so adjacent groups in the same day can be distinguished.
 
     Returns:
-        List of days with the following format:
-        [
-          {
-            "day": 1,
-            "exercises": [
-              {
-                "name": "Empuje de pecho con barra",
-                "is_comb": False,
-                "note": "bajar lento",   ← only present if the cell has a note
-                "weeks": [
-                  {
-                    "week": 1,
-                    "series": [
-                      {"reps": "12", "peso": "60"},
-                      {"reps": "10", "peso": "60"},
-                      {"reps": "10", "peso": "60"},
-                    ]
-                  },
-                  ... (weeks 2, 3, 4)
-                ]
-              },
-              ...
-            ]
-          },
-          ... (days 2, 3, 4)
-        ]
+        List of days. Each exercise dict has:
+          "name"       str   — exercise name (without "[C] " prefix)
+          "is_comb"    bool  — True if this exercise is part of a combined group
+          "comb_group" int   — group id (only present when comb_group_map is given)
+          "note"       str   — coach note (only present when a note exists)
+          "weeks"      list  — 4 weeks × 3 series × {"reps", "peso"}
     """
     if notes is None:
         notes = {}
     if yellow_rows is None:
         yellow_rows = set()
+    if comb_group_map is None:
+        comb_group_map = {}
     days = []
     i = 0
 
@@ -351,6 +394,10 @@ def parse_tab(rows, notes=None, italic_cells=None, yellow_rows=None):
                     weeks.append({"week": w + 1, "series": series})
 
                 ex_dict = {"name": name, "is_comb": is_comb, "weeks": weeks}
+                # Attach comb_group id when the Z-column merge map has data for this row.
+                # This lets the prompt builder split adjacent combined groups correctly.
+                if i in comb_group_map:
+                    ex_dict["comb_group"] = comb_group_map[i]
                 if ex_note:
                     ex_dict["note"] = ex_note
                 exercises.append(ex_dict)
@@ -456,9 +503,15 @@ def load_all_periods(service, spreadsheet_id):
     for tab in tabs:
         if tab.upper().startswith("ORIG"):
             continue
-        rows                        = read_tab(service, spreadsheet_id, tab)
-        notes, italic_cells, yellow_rows = read_tab_metadata(service, spreadsheet_id, tab)
-        days              = parse_tab(rows, notes=notes, italic_cells=italic_cells, yellow_rows=yellow_rows)
+        rows                                   = read_tab(service, spreadsheet_id, tab)
+        notes, italic_cells, yellow_rows, comb_group_map = read_tab_metadata(service, spreadsheet_id, tab)
+        days = parse_tab(
+            rows,
+            notes=notes,
+            italic_cells=italic_cells,
+            yellow_rows=yellow_rows,
+            comb_group_map=comb_group_map,
+        )
         periods.append({"period": tab, "days": days})
     return periods
 

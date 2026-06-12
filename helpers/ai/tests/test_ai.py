@@ -244,6 +244,32 @@ class TestGroupCombinedExercises:
         assert len(groups) == 1
         assert groups[0]["comb"] is True
 
+    def test_adjacent_combs_with_different_group_ids_split_into_two_groups(self):
+        """
+        comb_group IDs must override the contiguous-run heuristic.
+        When two back-to-back combined exercises have different IDs they
+        must produce two separate groups, not one merged one.
+        """
+        ex1 = {**self._ex("Abdomen A", True), "comb_group": 0}
+        ex2 = {**self._ex("Abdomen B", True), "comb_group": 0}
+        ex3 = {**self._ex("Press A",   True), "comb_group": 1}
+        ex4 = {**self._ex("Press B",   True), "comb_group": 1}
+        groups = _group_combined_exercises([ex1, ex2, ex3, ex4])
+        assert len(groups) == 2
+        assert groups[0]["exercises"] == [ex1, ex2]
+        assert groups[1]["exercises"] == [ex3, ex4]
+
+    def test_group_ids_with_isolated_exercise_in_between(self):
+        ex1 = {**self._ex("A", True),  "comb_group": 0}
+        ex2 = {**self._ex("B", True),  "comb_group": 0}
+        iso = self._ex("C", False)
+        ex3 = {**self._ex("D", True),  "comb_group": 1}
+        groups = _group_combined_exercises([ex1, ex2, iso, ex3])
+        assert len(groups) == 3
+        assert groups[0] == {"comb": True,  "exercises": [ex1, ex2]}
+        assert groups[1] == {"comb": False, "exercises": [iso]}
+        assert groups[2] == {"comb": True,  "exercises": [ex3]}
+
 
 # ---------------------------------------------------------------------------
 # _format_routine_structure — superset rendering

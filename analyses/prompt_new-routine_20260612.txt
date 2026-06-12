@@ -11,52 +11,60 @@ Nicolás starts period 15/06/26-.... Goal: hipertrofia.
 ## Routine to prescribe weights for
 
 Day 1:
-  #1 Abdominal recto largo (combinado) [3x8]
-  #2 Abdominal bolita a dos piernas (combinado) [3x8]
-  #3 Twist ruso (combinado) [3x8]
-  #4 Espinales en colchoneta (combinado) [3x10]
-  #5 Press de pecho con barra (banco plano) (combinado) [3x6]
-  #6 Press de pecho con mancuernas (banco plano) (combinado) [3x8]
+  --- Superset: Abdominal recto largo + Abdominal bolita a dos piernas + Twist ruso + Espinales en colchoneta + Press de pecho con barra (banco plano) + Press de pecho con mancuernas (banco plano) ---
+    #1 Abdominal recto largo [3x8]
+    #2 Abdominal bolita a dos piernas [3x8]
+    #3 Twist ruso [3x8]
+    #4 Espinales en colchoneta [3x10]
+    #5 Press de pecho con barra (banco plano) [3x6]
+    #6 Press de pecho con mancuernas (banco plano) [3x8]  ← REST HERE
   #7 Press de pecho en Hammer [3x10]
   #8 Triceps con polea (agarre prono) [3x10]
-  #9 Remo al mentón (combinado) [3x6]
-  #10 Vuelos laterales con mancuernas (combinado) [3x8]
+  --- Superset: Remo al mentón + Vuelos laterales con mancuernas ---
+    #9 Remo al mentón [3x6]
+    #10 Vuelos laterales con mancuernas [3x8]  ← REST HERE
 
 Day 2:
-  #1 Abdominal recto largo (combinado) [3x8]
-  #2 Abdominal bolita a dos piernas (combinado) [3x8]
-  #3 Twist ruso (combinado) [3x8]
-  #4 Espinales en colchoneta (combinado) [3x10]
-  #5 Apertura con mancuerna en banco plano (combinado) [3x6]
-  #6 Press de pecho con mancuernas (banco inclinado) (combinado) [3x8]
+  --- Superset: Abdominal recto largo + Abdominal bolita a dos piernas + Twist ruso + Espinales en colchoneta + Apertura con mancuerna en banco plano + Press de pecho con mancuernas (banco inclinado) ---
+    #1 Abdominal recto largo [3x8]
+    #2 Abdominal bolita a dos piernas [3x8]
+    #3 Twist ruso [3x8]
+    #4 Espinales en colchoneta [3x10]
+    #5 Apertura con mancuerna en banco plano [3x6]
+    #6 Press de pecho con mancuernas (banco inclinado) [3x8]  ← REST HERE
   #7 Peck Deck [3x10]
   #8 Fondo de tríceps en máquina [3x10]
-  #9 Press militar parado con barra (combinado) [3x6]
-  #10 Press de hombros con barra en landmine (1 brazo) (arrodillado) (combinado) [3x5]
+  --- Superset: Press militar parado con barra + Press de hombros con barra en landmine (1 brazo) (arrodillado) ---
+    #9 Press militar parado con barra [3x6]
+    #10 Press de hombros con barra en landmine (1 brazo) (arrodillado) [3x5]  ← REST HERE
 
 Day 3:
-  #1 Abdominal recto largo (combinado) [3x8]
-  #2 Abdominal bolita a dos piernas (combinado) [3x8]
-  #3 Twist ruso (combinado) [3x8]
-  #4 Espinales en colchoneta (combinado) [3x10]
-  #5 Prensa Hammer 45° (combinado) [3x6]
-  #6 Estocada al frente (total) (combinado) [3x10]
+  --- Superset: Abdominal recto largo + Abdominal bolita a dos piernas + Twist ruso + Espinales en colchoneta + Prensa Hammer 45° + Estocada al frente (total) ---
+    #1 Abdominal recto largo [3x8]
+    #2 Abdominal bolita a dos piernas [3x8]
+    #3 Twist ruso [3x8]
+    #4 Espinales en colchoneta [3x10]
+    #5 Prensa Hammer 45° [3x6]
+    #6 Estocada al frente (total) [3x10]  ← REST HERE
   #7 Extensión de rodillas en máquina [3x10]
-  #8 Tirón dorsal en polea (agarre prono) (combinado) [3x6]
-  #9 Remo a un brazo (combinado) [3x5]
+  --- Superset: Tirón dorsal en polea (agarre prono) + Remo a un brazo ---
+    #8 Tirón dorsal en polea (agarre prono) [3x6]
+    #9 Remo a un brazo [3x5]  ← REST HERE
   #10 Remo en hammer (agarre neutro) [3x10]
   #11 Bíceps con barra (agarre supino) [3x10]
 
 Day 4:
-  #1 Abdominal recto largo (combinado) [3x8]
-  #2 Abdominal bolita a dos piernas (combinado) [3x8]
-  #3 Twist ruso (combinado) [3x8]
-  #4 Espinales en colchoneta (combinado) [3x10]
-  #5 Sentadilla clásica (combinado) [3x6]
-  #6 Peso muerto con mancuernas (combinado) [3x8]
+  --- Superset: Abdominal recto largo + Abdominal bolita a dos piernas + Twist ruso + Espinales en colchoneta + Sentadilla clásica + Peso muerto con mancuernas ---
+    #1 Abdominal recto largo [3x8]
+    #2 Abdominal bolita a dos piernas [3x8]
+    #3 Twist ruso [3x8]
+    #4 Espinales en colchoneta [3x10]
+    #5 Sentadilla clásica [3x6]
+    #6 Peso muerto con mancuernas [3x8]  ← REST HERE
   #7 Flexión de rodillas acostado [3x10]
-  #8 Dominada (combinado) [3x6]
-  #9 Remo en landmine (combinado) [3x8]
+  --- Superset: Dominada + Remo en landmine ---
+    #8 Dominada [3x6]
+    #9 Remo en landmine [3x8]  ← REST HERE
   #10 Bíceps martillo (sentado) [3x10]
 
 
